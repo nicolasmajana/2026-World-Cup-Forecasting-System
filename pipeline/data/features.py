@@ -38,7 +38,13 @@ def compute_team_rolling_strengths(matches: pd.DataFrame) -> pd.DataFrame:
                 "defense_strength": defense.iloc[i],
             })
 
-    return pd.DataFrame(records).set_index(["match_date", "team_code"])
+    df = pd.DataFrame(records).set_index(["match_date", "team_code"])
+    # A team can have >1 match on the same calendar date in the historical
+    # record. Collapse to one row per (date, team) — keep the latest — so
+    # .loc lookups return scalars, not Series. Sorting also removes the
+    # "indexing past lexsort depth" performance warning.
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+    return df
 
 
 def build_match_features(
