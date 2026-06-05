@@ -120,15 +120,21 @@ def insert_matches(conn, df: pd.DataFrame, name_to_id: dict[str, int]):
             venue, m.get("tournament", "Unknown"), "kaggle",
         ))
 
+    # Batched insert via execute_values — far faster than executemany and
+    # won't time out the pooled connection on ~49k rows.
+    from psycopg2.extras import execute_values
+
     with conn.cursor() as cur:
-        cur.executemany(
+        execute_values(
+            cur,
             """
             INSERT INTO historical_matches
                 (match_date, home_team_id, away_team_id,
                  home_goals, away_goals, venue_type, tournament, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES %s
             """,
             rows,
+            page_size=1000,
         )
     conn.commit()
     return len(rows)

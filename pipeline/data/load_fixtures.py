@@ -56,9 +56,19 @@ def parse_offset(tz: str) -> timezone:
     return timezone(sign * timedelta(hours=hours))
 
 
-def to_utc(date_str: str, time_str: str, tz_str: str) -> datetime:
-    """Combine date + local time + offset into a UTC datetime."""
-    local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+def to_utc(date_str: str, time_field: str) -> datetime:
+    """
+    Combine date + a combined time field like '13:00 UTC-6' into UTC.
+    Falls back to 12:00 UTC if the time is missing/unparseable.
+    """
+    parts = (time_field or "").split()
+    clock = parts[0] if parts else "12:00"
+    tz_str = parts[1] if len(parts) > 1 else "UTC"
+    try:
+        local = datetime.strptime(f"{date_str} {clock}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        local = datetime.strptime(f"{date_str} 12:00", "%Y-%m-%d %H:%M")
+        tz_str = "UTC"
     local = local.replace(tzinfo=parse_offset(tz_str))
     return local.astimezone(timezone.utc)
 
@@ -86,42 +96,39 @@ def main():
     conn = get_connection()
     inserted = 0
     with conn.cursor() as cur:
-        for rnd in data.get("rounds", []):
-            stage = stage_for(rnd.get("name", ""))
-            for match in rnd.get("matches", []):
-                kickoff = to_utc(
-                    match["date"],
-                    match.get("time", "12:00"),
-                    match.get("timezone", "UTC"),
-                )
-                home = match.get("team1", {})
-                away = match.get("team2", {})
-                home_name = home.get("name") if isinstance(home, dict) else home
-                away_name = away.get("name") if isinstance(away, dict) else away
+        for match in data.get("matches", []):
+            stage = stage_for(match.get("round", ""))
+            kickoff = to_utc(match["date"], match.get("time", ""))
 
-                match_slug = f"{match['date']}-{home_name or 'TBD'}-{away_name or 'TBD'}"
-                ground = match.get("ground", {})
-                venue = ground.get("name") if isinstance(ground, dict) else ground
+            home = match.get("team1")
+            away = match.get("team2")
+            home_name = home.get("name") if isinstance(home, dict) else home
+            away_name = away.get("name") if isinstance(away, dict) else away
 
-                cur.execute(
-                    """
-                    INSERT INTO fixtures
-                        (match_id, kickoff_utc, home_team_id, away_team_id,
-                         venue, stage, group_name)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (match_id) DO NOTHING
-                    """,
-                    (
-                        match_slug,
-                        kickoff,
-                        team_id_by_name(cur, home_name),
-                        team_id_by_name(cur, away_name),
-                        venue,
-                        stage,
-                        match.get("group"),
-                    ),
-                )
-                inserted += cur.rowcount
+            ground = match.get("ground")
+            venue = ground.get("name") if isinstance(ground, dict) else ground
+
+            match_slug = f"{match['date']}-{home_name or 'TBD'}-{away_name or 'TBD'}"
+
+            cur.execute(
+                """
+                INSERT INTO fixtures
+                    (match_id, kickoff_utc, home_team_id, away_team_id,
+                     venue, stage, group_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (match_id) DO NOTHING
+                """,
+                (
+                    match_slug,
+                    kickoff,
+                    team_id_by_name(cur, home_name),
+                    team_id_by_name(cur, away_name),
+                    venue,
+                    stage,
+                    match.get("group"),
+                ),
+            )
+            inserted += cur.rowcount
     conn.commit()
     conn.close()
     print(f"Inserted {inserted} fixtures.")
