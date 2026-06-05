@@ -26,14 +26,24 @@ Create `pipeline/.env`:
 DATABASE_URL=postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres
 ```
 
-## 3. Load historical data
+## 3. Seed teams and load data
 
-Download the [Kaggle international football results dataset](https://www.kaggle.com/datasets/martj42/international-football-results-from-1872-to-2017) and save as `pipeline/data/raw/results.csv`.
+First seed the known cross-source team-name mappings:
+```bash
+# run db/seed_teams.sql in the Supabase SQL editor (after schema.sql)
+```
 
-Then run (once the loader script is written):
+Then load historical results (reads straight from GitHub, no download needed):
 ```bash
 python pipeline/data/load_kaggle.py
 ```
+
+Then load the 2026 fixture list:
+```bash
+python pipeline/data/load_fixtures.py
+```
+
+Data source details and licensing are documented in [data-sources.md](data-sources.md).
 
 ## 4. GitHub Actions secrets
 

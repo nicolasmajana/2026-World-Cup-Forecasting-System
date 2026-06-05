@@ -31,11 +31,16 @@ Five tables: `teams`, `historical_matches`, `fixtures`, `predictions`, `model_ru
 
 The `predictions` table is append-only and has a DB-level constraint preventing updates after `match_kickoff`. This immutability is the spine of the credibility pitch — enforce it at the DB layer, not just in application code.
 
-## Data sources
-- Kaggle international football results dataset (historical backbone)
-- FBref match stats via `soccerdata` Python package
-- FIFA rankings
-- Official 2026 fixture list (kickoff times, venues, group assignments)
+## Data sources (confirmed — see docs/data-sources.md)
+- **Historical backbone:** martj42 results.csv via GitHub raw URL (CC0, no auth). `load_kaggle.py`
+- **2026 fixtures:** openfootball/worldcup.json (CC0). `load_fixtures.py` — normalizes local-time-with-offset to UTC
+- **Elo:** eloratings.net TSV (join by full name, not code)
+- **xG enrichment:** FBref via `soccerdata`, 2018+2022 WCs + post-2017 only. Personal-use license only.
+
+**Canonical join key is `fifa_code`.** The `teams` table carries per-source alias columns
+(`martj42_name`, `elo_name`, `fbref_name`, `fifa_name`) to handle name mismatches
+(e.g. "United States"/"USA", "Korea Republic"/"South Korea"). Known mismatches seeded in
+`db/seed_teams.sql` — run it after `schema.sql`.
 
 ## Frontend pages (Next.js + Tailwind + shadcn/ui)
 1. **Home** — upcoming matches with locked probabilities, current Brier score

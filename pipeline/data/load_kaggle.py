@@ -1,9 +1,14 @@
 """
-One-time bulk loader: parse the Kaggle international results CSV and
+One-time bulk loader: parse the martj42 international results CSV and
 populate the `teams` and `historical_matches` tables.
 
-Dataset: https://www.kaggle.com/datasets/martj42/international-football-results-from-1872-to-2017
-Save the CSV as pipeline/data/raw/results.csv before running.
+Source (public domain, no auth needed):
+    https://raw.githubusercontent.com/martj42/international_results/master/results.csv
+
+By default this reads straight from GitHub. To work offline, save the CSV as
+pipeline/data/raw/results.csv and it will be used instead.
+
+Run db/seed_teams.sql FIRST so known source-name mismatches are pre-mapped.
 
 Usage:
     python pipeline/data/load_kaggle.py
@@ -16,6 +21,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection  # noqa: E402
 
+GITHUB_CSV = "https://raw.githubusercontent.com/martj42/international_results/master/results.csv"
 RAW_CSV = os.path.join(os.path.dirname(__file__), "raw", "results.csv")
 
 # Minimal name -> (fifa_code, confederation) map. Extend as needed; unknown
@@ -51,14 +57,36 @@ def derive_code(name: str, used: set[str]) -> str:
     return code
 
 
+def load_existing_alias_map(conn) -> dict[str, int]:
+    """
+    Map martj42 source names -> team_id for teams already seeded by
+    db/seed_teams.sql (the known cross-source mismatches).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, COALESCE(martj42_name, name) FROM teams"
+        )
+        return {row[1]: row[0] for row in cur.fetchall()}
+
+
 def upsert_teams(conn, df: pd.DataFrame) -> dict[str, int]:
-    """Insert all teams appearing in the dataset; return name -> team_id map."""
+    """
+    Map every martj42 team name to a team_id. Teams pre-seeded in
+    db/seed_teams.sql are reused (joined by martj42_name); any remaining
+    teams are inserted with a generated code.
+    """
     names = pd.unique(df[["home_team", "away_team"]].values.ravel())
+    name_to_id = load_existing_alias_map(conn)
     used_codes: set[str] = set()
-    name_to_id: dict[str, int] = {}
 
     with conn.cursor() as cur:
+        # collect codes already in use to avoid collisions
+        cur.execute("SELECT fifa_code FROM teams")
+        used_codes = {row[0] for row in cur.fetchall()}
+
         for name in sorted(names):
+            if name in name_to_id:
+                continue  # already seeded / inserted
             code, conf = CONFED.get(name, (None, "UNKNOWN"))
             if code is None:
                 code = derive_code(name, used_codes)
@@ -66,12 +94,12 @@ def upsert_teams(conn, df: pd.DataFrame) -> dict[str, int]:
 
             cur.execute(
                 """
-                INSERT INTO teams (fifa_code, name, confederation)
-                VALUES (%s, %s, %s)
+                INSERT INTO teams (fifa_code, name, confederation, martj42_name)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (fifa_code) DO UPDATE SET name = EXCLUDED.name
                 RETURNING id
                 """,
-                (code, name, conf),
+                (code, name, conf, name),
             )
             name_to_id[name] = cur.fetchone()[0]
     conn.commit()
@@ -107,10 +135,9 @@ def insert_matches(conn, df: pd.DataFrame, name_to_id: dict[str, int]):
 
 
 def main():
-    if not os.path.exists(RAW_CSV):
-        sys.exit(f"CSV not found at {RAW_CSV} — download it first (see docs/setup.md).")
-
-    df = pd.read_csv(RAW_CSV, parse_dates=["date"])
+    source = RAW_CSV if os.path.exists(RAW_CSV) else GITHUB_CSV
+    print(f"Reading results from: {source}")
+    df = pd.read_csv(source, parse_dates=["date"])
     df = df.dropna(subset=["home_score", "away_score"])
     print(f"Loaded {len(df)} matches from CSV.")
 

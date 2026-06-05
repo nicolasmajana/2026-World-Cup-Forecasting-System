@@ -3,16 +3,32 @@
 -- Run this in the Supabase SQL editor to initialize the schema.
 
 -- ─────────────────────────────────────────────
--- Teams
+-- Teams  (acts as the canonical dim_team dimension)
+--
+-- fifa_code is the canonical join key across all data sources. The per-source
+-- alias columns let the loaders join martj42 / eloratings / FBref / FIFA data
+-- that each spell country names differently (e.g. "United States" vs "USA",
+-- "Korea Republic" vs "South Korea"). See docs/data-sources.md.
 -- ─────────────────────────────────────────────
 CREATE TABLE teams (
     id            SERIAL PRIMARY KEY,
-    fifa_code     CHAR(3)      NOT NULL UNIQUE,   -- e.g. 'COL', 'BRA', 'ARG'
-    name          TEXT         NOT NULL,
+    fifa_code     CHAR(3)      NOT NULL UNIQUE,   -- canonical key: 'COL', 'USA', 'KOR'
+    name          TEXT         NOT NULL,           -- display name
     confederation TEXT         NOT NULL,           -- UEFA, CONMEBOL, CONCACAF, CAF, AFC, OFC
-    fifa_elo      INTEGER,                         -- updated periodically
+    fifa_elo      INTEGER,                         -- latest eloratings.net value
+
+    -- Source-specific name aliases (NULL if same as `name`)
+    martj42_name  TEXT,                            -- name as it appears in martj42 results.csv
+    elo_name      TEXT,                            -- name as it appears in eloratings.net TSV
+    fbref_name    TEXT,                            -- name as it appears on FBref
+    fifa_name     TEXT,                            -- official FIFA name (e.g. 'Korea Republic')
+
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- Lookup helpers for the loaders (join incoming rows by their source spelling)
+CREATE INDEX idx_teams_martj42 ON teams(martj42_name);
+CREATE INDEX idx_teams_elo     ON teams(elo_name);
 
 -- ─────────────────────────────────────────────
 -- Historical matches (training data)
