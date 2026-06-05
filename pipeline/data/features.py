@@ -84,4 +84,6 @@ def build_match_features(
                 "venue_enc": venue_enc,
             })
 
-    return pd.DataFrame(rows).dropna(subset=["attack_strength", "defense_strength"])
+    return pd.DataFrame(rows).dropna(
+        subset=["attack_strength", "defense_strength", "opp_defense_strength"]
+    )
