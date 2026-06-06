@@ -81,6 +81,29 @@ export default async function MatchPage({
         <h2 className="mb-4 text-lg font-bold text-ink">How the odds moved</h2>
         <OddsChart history={history} homeTeam={home} awayTeam={away} />
       </section>
+
+      {/* Qualitative context (injuries, suspensions) — populated later */}
+      {(() => {
+        const notes = history
+          .filter((s) => s.note)
+          .map((s) => ({ when: s.captured_at, note: s.note as string }));
+        if (notes.length === 0) return null;
+        return (
+          <section className="mt-6 rounded-2xl border border-sun/40 bg-sun-50 p-6">
+            <h2 className="mb-3 text-lg font-bold text-ink">Context notes</h2>
+            <ul className="space-y-2 text-sm text-ink/90">
+              {notes.map((n, i) => (
+                <li key={i}>
+                  <span className="font-semibold">
+                    {new Date(n.when).toLocaleDateString()}:
+                  </span>{" "}
+                  {n.note}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
     </main>
   );
 }
