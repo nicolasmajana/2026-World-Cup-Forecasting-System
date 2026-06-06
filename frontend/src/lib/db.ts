@@ -12,7 +12,11 @@ export const pool =
     // Supabase requires TLS. The pooler cert isn't in Node's default CA store,
     // so don't reject it.
     ssl: { rejectUnauthorized: false },
-    max: 5,
+    // Use Supabase's transaction pooler (port 6543) with this. Keep the local
+    // pool small and release idle connections quickly so serverless instances
+    // don't hoard them.
+    max: 3,
+    idleTimeoutMillis: 10_000,
   });
 
 if (process.env.NODE_ENV !== "production") globalForPg.pgPool = pool;

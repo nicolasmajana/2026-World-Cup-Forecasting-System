@@ -21,6 +21,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r pipeline/requirements.txt
 
+      - name: Refresh Elo ratings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/data/load_elo.py
+
       - name: Lock upcoming predictions
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
