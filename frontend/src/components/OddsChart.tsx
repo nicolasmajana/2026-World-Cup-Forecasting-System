@@ -106,7 +106,7 @@ export function OddsChart({
       </div>
       {n === 1 && (
         <p className="mt-2 text-xs text-mute">
-          Only one snapshot so far — the line builds out as the model
+          Only one snapshot so far, the line builds out as the model
           re-evaluates this match each day.
         </p>
       )}

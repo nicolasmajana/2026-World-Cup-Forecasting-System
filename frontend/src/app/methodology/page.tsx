@@ -3,9 +3,9 @@ import { getLatestModelRun } from "@/lib/queries";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Methodology — WC 2026 Forecasts",
+  title: "Methodology, WC 2026 Forecasts",
   description:
-    "How the model turns 150 years of football results into probabilities — explained plainly, then in technical depth.",
+    "How the model turns 150 years of football results into probabilities, explained plainly, then in technical depth.",
 };
 
 export default async function MethodologyPage() {
@@ -17,7 +17,7 @@ export default async function MethodologyPage() {
         How this works
       </h1>
       <p className="mt-3 text-lg text-mute">
-        No crystal ball — just goals, history, and honest accounting. Here&apos;s
+        No crystal ball, just goals, history, and honest accounting. Here&apos;s
         the whole method, first in plain language, then for the technically
         curious.
       </p>
@@ -27,13 +27,13 @@ export default async function MethodologyPage() {
         <p>
           Football is mostly about goals, and goals arrive somewhat randomly. A
           team that creates a lot and concedes little will <em>tend</em> to score
-          more — but any single match can swing on a deflection or a red card.
+          more, but any single match can swing on a deflection or a red card.
         </p>
         <p>
           So instead of predicting one scoreline, the model estimates how many
           goals each team is <strong>likely</strong> to score, then plays the
           match out <strong>10,000 times</strong> on a computer. Maybe Brazil
-          wins 6,200 of those, draws 1,900, loses 1,900 — that becomes{" "}
+          wins 6,200 of those, draws 1,900, loses 1,900, that becomes{" "}
           <span className="font-semibold text-tomato">62% / 19% / 19%</span>.
           Probabilities, not certainties.
         </p>
@@ -56,7 +56,7 @@ export default async function MethodologyPage() {
         <p>
           Every prediction is written to a database and{" "}
           <strong>locked with a timestamp before kickoff</strong>. After the
-          match starts, it physically cannot be edited — that rule is enforced by
+          match starts, it physically cannot be edited, that rule is enforced by
           the database itself, not just a promise. So this is a public record:
           you can always check what the model said <em>before</em> the ball was
           kicked.
@@ -64,7 +64,7 @@ export default async function MethodologyPage() {
         <p>
           And it&apos;s graded honestly. The headline metric isn&apos;t
           &quot;accuracy&quot; (a vanity number) but the{" "}
-          <strong>Brier score</strong>, which rewards being well-calibrated —
+          <strong>Brier score</strong>, which rewards being well-calibrated:
           your 70% calls actually happening about 70% of the time. See the{" "}
           <a href="/calibration" className="font-semibold text-tomato hover:underline">
             calibration page
@@ -83,12 +83,12 @@ export default async function MethodologyPage() {
           from Poisson(λ) ten thousand times and count outcomes.
         </p>
         <p>
-          Trained on all internationals before 2024 and validated on 2024–2025
+          Trained on all internationals before 2024 and validated on 2024-2025
           as a true hold-out. It currently posts a{" "}
           <strong>
             Brier score of {run?.val_brier_score ?? "≈0.19"}
           </strong>{" "}
-          on that hold-out — beating a base-rate baseline by ~9%. Deliberately
+          on that hold-out, beating a base-rate baseline by ~9%. Deliberately
           simple for v1; bivariate Poisson (correlated scoring) and gradient
           boosting are the planned next steps.
         </p>

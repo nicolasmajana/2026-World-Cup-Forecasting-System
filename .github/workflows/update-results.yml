@@ -21,6 +21,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r pipeline/requirements.txt
 
+      - name: Fetch finished match results
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/jobs/fetch_results.py
+
       - name: Update Brier scores for finished matches
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

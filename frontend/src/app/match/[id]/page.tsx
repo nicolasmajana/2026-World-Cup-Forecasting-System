@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getMatchDetail, getOddsHistory } from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { OddsChart } from "@/components/OddsChart";
+import { predictedScore } from "@/lib/flags";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ export default async function MatchPage({
   const played = m.home_goals != null && m.away_goals != null;
   const home = m.home_team ?? "TBD";
   const away = m.away_team ?? "TBD";
+  const predScore = predictedScore(m.xg_home, m.xg_away);
+  const predScoreHit =
+    played && predScore === `${m.home_goals}-${m.away_goals}`;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -51,11 +55,11 @@ export default async function MatchPage({
         <div className="text-center">
           {played ? (
             <span className="text-3xl font-extrabold text-ink">
-              {m.home_goals}–{m.away_goals}
+              {m.home_goals}-{m.away_goals}
             </span>
           ) : (
             <span className="text-sm font-semibold text-mute">
-              xG {m.xg_home ?? "—"}–{m.xg_away ?? "—"}
+              xG {m.xg_home ?? "-"} to {m.xg_away ?? "-"}
             </span>
           )}
         </div>
@@ -64,6 +68,22 @@ export default async function MatchPage({
           <span className="text-lg font-extrabold text-ink">{away}</span>
         </div>
       </div>
+
+      {/* Predicted scoreline */}
+      {predScore && (
+        <div className="mt-4 flex items-center justify-center gap-2 text-sm">
+          <span className="font-semibold text-mute">Predicted score</span>
+          <span className="rounded-md bg-ink px-2 py-0.5 font-extrabold text-paper">
+            {predScore}
+          </span>
+          {played &&
+            (predScoreHit ? (
+              <span className="font-semibold text-tomato">exact hit</span>
+            ) : (
+              <span className="text-mute">missed</span>
+            ))}
+        </div>
+      )}
 
       {/* Probabilities */}
       {h != null ? (
@@ -81,29 +101,6 @@ export default async function MatchPage({
         <h2 className="mb-4 text-lg font-bold text-ink">How the odds moved</h2>
         <OddsChart history={history} homeTeam={home} awayTeam={away} />
       </section>
-
-      {/* Qualitative context (injuries, suspensions) — populated later */}
-      {(() => {
-        const notes = history
-          .filter((s) => s.note)
-          .map((s) => ({ when: s.captured_at, note: s.note as string }));
-        if (notes.length === 0) return null;
-        return (
-          <section className="mt-6 rounded-2xl border border-sun/40 bg-sun-50 p-6">
-            <h2 className="mb-3 text-lg font-bold text-ink">Context notes</h2>
-            <ul className="space-y-2 text-sm text-ink/90">
-              {notes.map((n, i) => (
-                <li key={i}>
-                  <span className="font-semibold">
-                    {new Date(n.when).toLocaleDateString()}:
-                  </span>{" "}
-                  {n.note}
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })()}
     </main>
   );
 }

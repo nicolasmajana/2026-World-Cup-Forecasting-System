@@ -19,7 +19,7 @@ export default async function GroupsPage() {
   // group by group_name
   const groups = new Map<string, FixtureRow[]>();
   for (const m of all) {
-    const key = m.group_name ?? "—";
+    const key = m.group_name ?? "-";
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(m);
   }

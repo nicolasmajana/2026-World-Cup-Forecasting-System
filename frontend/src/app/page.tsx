@@ -18,7 +18,7 @@ export default async function Home() {
   const brier =
     calibration.mean_brier != null
       ? calibration.mean_brier.toFixed(4)
-      : "—";
+      : "-";
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -29,7 +29,7 @@ export default async function Home() {
         <p className="mt-3 max-w-2xl text-mute">
           Every prediction is locked with a timestamp <em>before</em> kickoff and
           can never be changed afterward. This is a public record of what the
-          model said — and how right it turns out to be.
+          model said, and how right it turns out to be.
         </p>
       </header>
 

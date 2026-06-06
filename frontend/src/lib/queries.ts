@@ -145,6 +145,37 @@ export async function getReliabilityBins(): Promise<ReliabilityBin[]> {
   );
 }
 
+export type ScorelineAccuracy = {
+  played: number;
+  exact_hits: number;
+  outcome_hits: number;
+};
+
+/**
+ * Success rate of the *exact predicted scoreline* (and, separately, the
+ * outcome) vs. actual results. The predicted scoreline is the modal Poisson
+ * scoreline: floor(xg) for each side. Exact-score hits are rare by nature, so
+ * this is reported on its own, distinct from the Brier score for W/D/L.
+ */
+export async function getScorelineAccuracy(): Promise<ScorelineAccuracy> {
+  const rows = await query<ScorelineAccuracy>(
+    `SELECT
+       COUNT(*) FILTER (WHERE f.home_goals IS NOT NULL)::int AS played,
+       COUNT(*) FILTER (
+         WHERE f.home_goals IS NOT NULL
+           AND floor(p.xg_home) = f.home_goals
+           AND floor(p.xg_away) = f.away_goals
+       )::int AS exact_hits,
+       COUNT(*) FILTER (
+         WHERE f.home_goals IS NOT NULL
+           AND sign(p.xg_home - p.xg_away) = sign(f.home_goals - f.away_goals)
+       )::int AS outcome_hits
+     FROM predictions p
+     JOIN fixtures f ON f.id = p.fixture_id`,
+  );
+  return rows[0] ?? { played: 0, exact_hits: 0, outcome_hits: 0 };
+}
+
 /** Metadata about the latest model run (for the footer / methodology hook). */
 export async function getLatestModelRun() {
   const rows = await query<{

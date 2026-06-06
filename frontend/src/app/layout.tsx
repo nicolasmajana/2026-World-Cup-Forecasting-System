@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "World Cup 2026 — Live Forecasts",
+  title: "World Cup 2026 Live Forecasts",
   description:
     "Probabilistic World Cup 2026 forecasts, locked before kickoff and scored after. A public record of what the model predicted.",
 };

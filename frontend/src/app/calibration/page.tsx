@@ -1,6 +1,7 @@
 import {
   getReliabilityBins,
   getCalibrationSummary,
+  getScorelineAccuracy,
   type ReliabilityBin,
 } from "@/lib/queries";
 
@@ -58,10 +59,16 @@ function ReliabilityDiagram({ bins }: { bins: ReliabilityBin[] }) {
 }
 
 export default async function CalibrationPage() {
-  const [bins, summary] = await Promise.all([
+  const [bins, summary, scoreline] = await Promise.all([
     getReliabilityBins(),
     getCalibrationSummary(),
+    getScorelineAccuracy(),
   ]);
+
+  const rate = (hits: number) =>
+    scoreline.played > 0
+      ? `${Math.round((hits / scoreline.played) * 100)}%`
+      : "-";
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -72,20 +79,37 @@ export default async function CalibrationPage() {
         calibrated; above it the model was too cautious, below it too confident.
       </p>
 
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat
           label="Brier score"
-          value={summary.mean_brier != null ? summary.mean_brier.toFixed(4) : "—"}
-          hint="lower is better"
+          value={summary.mean_brier != null ? summary.mean_brier.toFixed(4) : "-"}
+          hint="W/D/L, lower is better"
         />
         <Stat label="Matches scored" value={String(summary.scored_matches)} hint="so far" />
+        <Stat
+          label="Outcome hit rate"
+          value={rate(scoreline.outcome_hits)}
+          hint="right W/D/L pick"
+        />
+        <Stat
+          label="Exact score rate"
+          value={rate(scoreline.exact_hits)}
+          hint="predicted scoreline"
+        />
       </div>
+
+      <p className="mt-3 text-sm text-mute">
+        Two different bets, two different success rates: the{" "}
+        <strong>outcome</strong> pick (win/draw/loss) lands far more often than
+        the <strong>exact scoreline</strong>, which is hard by nature. The Brier
+        score grades the full probability forecast, not just the top pick.
+      </p>
 
       <section className="mt-8 rounded-2xl border border-mute/30 bg-paper p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-bold text-ink">Reliability diagram</h2>
         {bins.length === 0 ? (
           <p className="text-sm text-mute">
-            No completed matches yet — the diagram fills in once results start
+            No completed matches yet. The diagram fills in once results start
             coming in and predictions get scored.
           </p>
         ) : (

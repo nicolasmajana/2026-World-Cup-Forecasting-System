@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { MatchPrediction } from "@/lib/queries";
 import { Flag } from "./Flag";
+import { predictedScore } from "@/lib/flags";
 
 const COLOMBIA = "COL";
 
@@ -64,14 +65,16 @@ export function MatchCard({ m }: { m: MatchPrediction }) {
           </span>
         </div>
 
-        {/* Center: score or xG */}
+        {/* Center: final score, or the model's predicted scoreline */}
         <div className="px-2 text-center text-xs font-medium text-mute">
           {played ? (
             <span className="text-base font-extrabold text-ink">
-              {m.home_goals}–{m.away_goals}
+              {m.home_goals}-{m.away_goals}
             </span>
           ) : (
-            <>xG {m.xg_home}–{m.xg_away}</>
+            <span title={`xG ${m.xg_home} to ${m.xg_away}`}>
+              pred {predictedScore(m.xg_home, m.xg_away) ?? "-"}
+            </span>
           )}
         </div>
 

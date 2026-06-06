@@ -23,3 +23,15 @@ export function flagUrl(teamName: string, width: 20 | 40 | 80 = 40): string | nu
   const code = NAME_TO_FLAG[teamName];
   return code ? `https://flagcdn.com/w${width}/${code}.png` : null;
 }
+
+/**
+ * Most likely scoreline from expected goals: the modal Poisson count for each
+ * side is floor(lambda). Returns "2-1" style, or null if xG is missing.
+ */
+export function predictedScore(
+  xgHome: string | null,
+  xgAway: string | null,
+): string | null {
+  if (xgHome == null || xgAway == null) return null;
+  return `${Math.floor(parseFloat(xgHome))}-${Math.floor(parseFloat(xgAway))}`;
+}

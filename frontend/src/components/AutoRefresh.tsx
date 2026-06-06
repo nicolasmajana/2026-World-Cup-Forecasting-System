@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 /**
  * Periodically re-fetches the current (dynamic) server route so locked
- * predictions, live scores, and the Brier score update on their own —
+ * predictions, live scores, and the Brier score update on their own -
  * no manual reload. Default every 60s.
  */
 export function AutoRefresh({ intervalMs = 60_000 }: { intervalMs?: number }) {
