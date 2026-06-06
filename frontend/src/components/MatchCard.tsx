@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchPrediction } from "@/lib/queries";
 import { Flag } from "./Flag";
 
@@ -37,8 +38,9 @@ export function MatchCard({ m }: { m: MatchPrediction }) {
   const played = m.home_goals != null && m.away_goals != null;
 
   return (
-    <article
-      className={`rounded-xl border bg-paper p-4 shadow-sm transition hover:shadow-md ${
+    <Link
+      href={`/match/${m.fixture_id}`}
+      className={`block rounded-xl border bg-paper p-4 shadow-sm transition hover:shadow-md hover:border-tomato/50 ${
         involvesColombia ? "border-sun ring-1 ring-sun/40" : "border-mute/30"
       }`}
     >
@@ -98,6 +100,6 @@ export function MatchCard({ m }: { m: MatchPrediction }) {
         {m.locked_at && <span>🔒 Locked {new Date(m.locked_at).toLocaleDateString()}</span>}
         {played && m.brier_score && <span>Brier {parseFloat(m.brier_score).toFixed(3)}</span>}
       </div>
-    </article>
+    </Link>
   );
 }

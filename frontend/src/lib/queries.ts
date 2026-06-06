@@ -95,6 +95,56 @@ export async function getKnockoutMatches(): Promise<FixtureRow[]> {
   );
 }
 
+export type OddsSnapshot = {
+  captured_at: string;
+  p_home_win: string;
+  p_draw: string;
+  p_away_win: string;
+  note: string | null;
+};
+
+/** One fixture's full detail (teams, prediction, result). */
+export async function getMatchDetail(fixtureId: number): Promise<FixtureRow | null> {
+  const rows = await query<FixtureRow>(
+    `${FIXTURE_SELECT} WHERE f.id = $1`,
+    [fixtureId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Time series of odds for one fixture (for the drift chart). */
+export async function getOddsHistory(fixtureId: number): Promise<OddsSnapshot[]> {
+  return query<OddsSnapshot>(
+    `SELECT captured_at, p_home_win, p_draw, p_away_win, note
+     FROM prediction_history
+     WHERE fixture_id = $1
+     ORDER BY captured_at`,
+    [fixtureId],
+  );
+}
+
+export type ReliabilityBin = {
+  bucket: number;
+  mean_predicted: number;
+  observed_freq: number;
+  n: number;
+};
+
+/** Reliability-diagram bins: predicted vs. observed home-win frequency. */
+export async function getReliabilityBins(): Promise<ReliabilityBin[]> {
+  return query<ReliabilityBin>(
+    `SELECT width_bucket(p.p_home_win, 0, 1, 10) AS bucket,
+            AVG(p.p_home_win)::float AS mean_predicted,
+            AVG(CASE WHEN f.home_goals > f.away_goals THEN 1.0 ELSE 0.0 END)::float
+              AS observed_freq,
+            COUNT(*)::int AS n
+     FROM predictions p
+     JOIN fixtures f ON f.id = p.fixture_id
+     WHERE f.home_goals IS NOT NULL
+     GROUP BY bucket ORDER BY bucket`,
+  );
+}
+
 /** Metadata about the latest model run (for the footer / methodology hook). */
 export async function getLatestModelRun() {
   const rows = await query<{

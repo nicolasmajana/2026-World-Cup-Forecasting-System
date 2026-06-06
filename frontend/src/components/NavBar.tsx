@@ -4,6 +4,8 @@ const LINKS = [
   { href: "/", label: "Home" },
   { href: "/groups", label: "Groups" },
   { href: "/bracket", label: "Bracket" },
+  { href: "/calibration", label: "Calibration" },
+  { href: "/methodology", label: "Methodology" },
 ];
 
 export function NavBar() {
