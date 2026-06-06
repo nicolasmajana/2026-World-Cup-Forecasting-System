@@ -74,6 +74,37 @@ class PoissonGoalModel:
         }
 
 
+    def predict_outcome_probs(
+        self,
+        home_features: pd.DataFrame,
+        away_features: pd.DataFrame,
+        max_goals: int = 15,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Vectorized, exact W/D/L probabilities for many matches at once.
+
+        Instead of Monte Carlo per match, compute the analytic outcome
+        probabilities from two independent Poisson(λ) distributions over a
+        goal grid 0..max_goals. Returns (p_home_win, p_draw, p_away_win),
+        each shape (n_matches,). This is exact (no sampling noise) and ~100x
+        faster than looping predict_match — used for validation/backtesting.
+        """
+        lam_h = self.predict_lambda(home_features)   # (n,)
+        lam_a = self.predict_lambda(away_features)   # (n,)
+        ks = np.arange(0, max_goals + 1)
+        ph = poisson.pmf(ks[None, :], lam_h[:, None])  # (n, G)
+        pa = poisson.pmf(ks[None, :], lam_a[:, None])  # (n, G)
+
+        p_draw = (ph * pa).sum(axis=1)
+        cum_pa = np.cumsum(pa, axis=1)                  # P(away <= j)
+        pa_lt = np.concatenate(
+            [np.zeros((pa.shape[0], 1)), cum_pa[:, :-1]], axis=1
+        )                                               # P(away < i)
+        p_home_win = (ph * pa_lt).sum(axis=1)
+        p_away_win = 1.0 - p_draw - p_home_win
+        return p_home_win, p_draw, p_away_win
+
+
 def brier_score(prediction: dict, home_goals: int, away_goals: int) -> float:
     """
     Multi-class Brier score for a single match.

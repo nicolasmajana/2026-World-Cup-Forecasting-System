@@ -34,6 +34,22 @@ def git_sha() -> str:
         return "unknown"
 
 
+def connect_with_retry(attempts: int = 5, delay: float = 5.0):
+    """Open a DB connection, retrying on transient network/DNS failures so a
+    brief internet blip doesn't discard an expensive training run."""
+    import time
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            return get_connection()
+        except Exception as e:  # OperationalError (DNS, refused, etc.)
+            last = e
+            print(f"  DB connect attempt {i}/{attempts} failed: {e}".strip())
+            if i < attempts:
+                time.sleep(delay)
+    raise last
+
+
 def feature_pair_for_match(m, rolling, elo_map):
     """Build (home_features, away_features) dicts for one match row, or None."""
     out = {}
@@ -67,8 +83,14 @@ def main():
     print("Computing rolling attack/defense strengths…")
     rolling = compute_team_rolling_strengths(hist)
 
-    # Elo not yet loaded — all teams default to 1500 (constant feature for v1).
-    elo_map: dict[str, int] = {}
+    # Load Elo from the DB (teams.fifa_elo). Teams without a value fall back
+    # to 1500 inside the feature builder.
+    conn0 = get_connection()
+    with conn0.cursor() as cur:
+        cur.execute("SELECT fifa_code, fifa_elo FROM teams WHERE fifa_elo IS NOT NULL")
+        elo_map = {code: elo for code, elo in cur.fetchall()}
+    conn0.close()
+    print(f"Loaded Elo for {len(elo_map)} teams.")
 
     train = hist[hist["match_date"] < TRAIN_CUTOFF]
     val = hist[hist["match_date"] >= TRAIN_CUTOFF]
@@ -82,36 +104,68 @@ def main():
     model = PoissonGoalModel().fit(train_feats)
 
     print("Evaluating on 2024-2025 hold-out (Brier score)…")
-    briers, base_briers = [], []
-    # base rate for a naive baseline (home/draw/away frequencies in train)
-    base = [
-        (train["home_goals"] > train["away_goals"]).mean(),
-        (train["home_goals"] == train["away_goals"]).mean(),
-        (train["home_goals"] < train["away_goals"]).mean(),
-    ]
+    # Collect feature rows for every val match with enough history, then score
+    # them all in ONE vectorized call (exact analytic probabilities).
+    home_rows, away_rows, outcomes = [], [], []
     for _, m in val.iterrows():
         pair = feature_pair_for_match(m, rolling, elo_map)
         if pair is None:
             continue
-        pred = model.predict_match(pair[0], pair[1])
-        briers.append(brier_score(pred, m["home_goals"], m["away_goals"]))
-        base_briers.append(
-            brier_score(
-                {"p_home_win": base[0], "p_draw": base[1], "p_away_win": base[2]},
-                m["home_goals"], m["away_goals"],
-            )
-        )
+        home_rows.append(pair[0])
+        away_rows.append(pair[1])
+        if m["home_goals"] > m["away_goals"]:
+            outcomes.append([1, 0, 0])
+        elif m["home_goals"] == m["away_goals"]:
+            outcomes.append([0, 1, 0])
+        else:
+            outcomes.append([0, 0, 1])
 
-    val_brier = float(np.mean(briers))
-    base_brier = float(np.mean(base_briers))
+    home_df = pd.DataFrame(home_rows)[FEATURE_COLS]
+    away_df = pd.DataFrame(away_rows)[FEATURE_COLS]
+    outcomes = np.array(outcomes, dtype=float)
+
+    p_h, p_d, p_a = model.predict_outcome_probs(home_df, away_df)
+    probs = np.column_stack([p_h, p_d, p_a])
+    # multi-class Brier: mean over matches of mean squared error across 3 classes
+    briers = ((probs - outcomes) ** 2).mean(axis=1)
+
+    # naive baseline: always predict the train-set base rates
+    base = np.array([
+        (train["home_goals"] > train["away_goals"]).mean(),
+        (train["home_goals"] == train["away_goals"]).mean(),
+        (train["home_goals"] < train["away_goals"]).mean(),
+    ])
+    base_briers = ((base[None, :] - outcomes) ** 2).mean(axis=1)
+
+    val_brier = float(briers.mean())
+    base_brier = float(base_briers.mean())
     print(f"\n  Model Brier:    {val_brier:.4f}  (lower is better)")
     print(f"  Baseline Brier: {base_brier:.4f}  (always predict base rates)")
     print(f"  Evaluated on {len(briers):,} matches with enough history.")
     improvement = (base_brier - val_brier) / base_brier * 100
     print(f"  Improvement over baseline: {improvement:+.1f}%")
 
-    # ── Log the run ───────────────────────────────────────────────
-    conn = get_connection()
+    # ── Persist results LOCALLY first, so the expensive compute is never
+    #    lost to a network blip during the DB write. ────────────────
+    params = {"alpha": 0.1, "features": FEATURE_COLS, "n_sims": 10000,
+              "elo_loaded": len(elo_map) > 0}
+    result = {
+        "model_version": MODEL_VERSION,
+        "train_cutoff": str(TRAIN_CUTOFF.date()),
+        "val_brier_score": round(val_brier, 5),
+        "baseline_brier": round(base_brier, 5),
+        "n_train_matches": len(train_feats),
+        "n_val_matches": len(briers),
+        "parameters": params,
+        "git_sha": git_sha(),
+    }
+    results_path = os.path.join(os.path.dirname(__file__), "last_run.json")
+    with open(results_path, "w") as f:
+        json.dump(result, f, indent=2)
+    print(f"\nSaved results to {results_path}")
+
+    # ── Log the run to the DB (with retry on transient failures) ───
+    conn = connect_with_retry()
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -122,14 +176,11 @@ def main():
             RETURNING id
             """,
             (MODEL_VERSION, TRAIN_CUTOFF.date(), round(val_brier, 5),
-             len(train_feats),
-             json.dumps({"alpha": 0.1, "features": FEATURE_COLS,
-                         "n_sims": 10000, "elo_loaded": False}),
-             git_sha()),
+             len(train_feats), json.dumps(params), git_sha()),
         )
         run_id = cur.fetchone()[0]
     conn.commit()
-    print(f"\nLogged model_run id={run_id}.")
+    print(f"Logged model_run id={run_id}.")
 
     # ── Show a few real 2026 predictions ──────────────────────────
     print("\nSample 2026 predictions (using each team's latest form):")

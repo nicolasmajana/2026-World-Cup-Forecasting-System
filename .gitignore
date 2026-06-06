@@ -20,3 +20,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# model run artifacts
+pipeline/model/last_run.json
