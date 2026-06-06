@@ -25,3 +25,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python pipeline/jobs/lock_predictions.py
+
+      - name: Snapshot odds for the drift chart
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/jobs/snapshot_odds.py
