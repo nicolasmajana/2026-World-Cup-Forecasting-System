@@ -24,21 +24,23 @@ def compute_team_rolling_strengths(matches: pd.DataFrame) -> pd.DataFrame:
     away_rows = matches[["match_date", "away_code", "away_goals", "home_goals"]].copy()
     away_rows.columns = ["match_date", "team_code", "goals_scored", "goals_conceded"]
 
-    team_games = pd.concat([home_rows, away_rows]).sort_values("match_date")
+    team_games = pd.concat([home_rows, away_rows]).sort_values(
+        ["team_code", "match_date"]
+    )
 
-    for team, grp in team_games.groupby("team_code"):
-        grp = grp.sort_values("match_date")
-        attack  = grp["goals_scored"].shift(1).rolling(ROLLING_WINDOW, min_periods=3).mean()
-        defense = grp["goals_conceded"].shift(1).rolling(ROLLING_WINDOW, min_periods=3).mean()
-        for i, (_, row) in enumerate(grp.iterrows()):
-            records.append({
-                "match_date": row["match_date"],
-                "team_code": team,
-                "attack_strength": attack.iloc[i],
-                "defense_strength": defense.iloc[i],
-            })
+    # Rolling mean of the PREVIOUS ROLLING_WINDOW games, per team. Using
+    # groupby().transform keeps everything vectorized — no per-row Python loop.
+    grouped = team_games.groupby("team_code", sort=False)
+    team_games["attack_strength"] = grouped["goals_scored"].transform(
+        lambda s: s.shift(1).rolling(ROLLING_WINDOW, min_periods=3).mean()
+    )
+    team_games["defense_strength"] = grouped["goals_conceded"].transform(
+        lambda s: s.shift(1).rolling(ROLLING_WINDOW, min_periods=3).mean()
+    )
 
-    df = pd.DataFrame(records).set_index(["match_date", "team_code"])
+    df = team_games[
+        ["match_date", "team_code", "attack_strength", "defense_strength"]
+    ].set_index(["match_date", "team_code"])
     # A team can have >1 match on the same calendar date in the historical
     # record. Collapse to one row per (date, team) — keep the latest — so
     # .loc lookups return scalars, not Series. Sorting also removes the
@@ -56,34 +58,31 @@ def build_match_features(
     Build feature matrix where each row is a team-in-a-match.
     Columns: attack_strength, defense_strength, elo, venue_type_enc, days_rest (placeholder)
     """
-    rows = []
-    for _, m in matches.iterrows():
-        for side in ("home", "away"):
-            code = m[f"{side}_code"]
-            opp_side = "away" if side == "home" else "home"
-            opp_code = m[f"{opp_side}_code"]
-            try:
-                atk = rolling.loc[(m["match_date"], code), "attack_strength"]
-                dfs = rolling.loc[(m["match_date"], code), "defense_strength"]
-                opp_dfs = rolling.loc[(m["match_date"], opp_code), "defense_strength"]
-            except KeyError:
-                continue  # skip if insufficient history
+    flat = rolling.reset_index()  # match_date, team_code, attack_strength, defense_strength
 
-            venue_enc = 1 if side == "home" and m["venue_type"] == "home" else (
-                -1 if side == "away" and m["venue_type"] == "away" else 0
-            )
+    def side_frame(team_col, opp_col, goals_col, venue_val, venue_sign):
+        # own attack/defense for the team on this side
+        own = flat.rename(columns={"team_code": team_col})
+        m = matches.merge(own, on=["match_date", team_col], how="left")
+        # opponent's defense strength
+        opp = flat.rename(
+            columns={"team_code": opp_col, "defense_strength": "opp_defense_strength"}
+        )[["match_date", opp_col, "opp_defense_strength"]]
+        m = m.merge(opp, on=["match_date", opp_col], how="left")
+        return pd.DataFrame({
+            "match_date": m["match_date"],
+            "team_code": m[team_col],
+            "goals_scored": m[goals_col],
+            "attack_strength": m["attack_strength"],
+            "defense_strength": m["defense_strength"],
+            "opp_defense_strength": m["opp_defense_strength"],
+            "elo": m[team_col].map(elo_map).fillna(1500),
+            "venue_enc": np.where(m["venue_type"] == venue_val, venue_sign, 0),
+        })
 
-            rows.append({
-                "match_date": m["match_date"],
-                "team_code": code,
-                "goals_scored": m[f"{side}_goals"],
-                "attack_strength": atk,
-                "defense_strength": dfs,
-                "opp_defense_strength": opp_dfs,
-                "elo": elo_map.get(code, 1500),
-                "venue_enc": venue_enc,
-            })
+    home = side_frame("home_code", "away_code", "home_goals", "home", 1)
+    away = side_frame("away_code", "home_code", "away_goals", "away", -1)
 
-    return pd.DataFrame(rows).dropna(
+    return pd.concat([home, away], ignore_index=True).dropna(
         subset=["attack_strength", "defense_strength", "opp_defense_strength"]
     )
