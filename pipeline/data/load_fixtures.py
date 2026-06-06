@@ -31,19 +31,22 @@ FIXTURES_URL = (
 STAGE_MAP = {
     "Round of 32": "r32",
     "Round of 16": "r16",
-    "Quarterfinals": "qf",
+    # openfootball uses singular labels for these
+    "Quarter-final": "qf",
     "Quarter-finals": "qf",
-    "Semifinals": "sf",
+    "Quarterfinals": "qf",
+    "Semi-final": "sf",
     "Semi-finals": "sf",
+    "Semifinals": "sf",
+    "Match for third place": "3p",
     "Final": "f",
-    "Match for third place": "f",
 }
 
 
 def stage_for(round_label: str) -> str:
     if round_label in STAGE_MAP:
         return STAGE_MAP[round_label]
-    return "group"  # "Matchday 1/2/3" and group labels
+    return "group"  # "Matchday N" group labels
 
 
 def parse_offset(tz: str) -> timezone:

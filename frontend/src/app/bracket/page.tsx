@@ -3,12 +3,13 @@ import { Flag } from "@/components/Flag";
 
 export const dynamic = "force-dynamic";
 
-const ROUND_ORDER = ["r32", "r16", "qf", "sf", "f"] as const;
+const ROUND_ORDER = ["r32", "r16", "qf", "sf", "3p", "f"] as const;
 const ROUND_LABEL: Record<string, string> = {
   r32: "Round of 32",
   r16: "Round of 16",
   qf: "Quarter-finals",
   sf: "Semi-finals",
+  "3p": "Third place",
   f: "Final",
 };
 
