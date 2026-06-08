@@ -123,10 +123,15 @@ BEGIN
 
     IF now() >= OLD.match_kickoff THEN
         RAISE EXCEPTION
-            'Prediction % is locked — match kicked off at %. Cannot mutate after kickoff.',
+            'Prediction % is locked - match kicked off at %. Cannot mutate after kickoff.',
             OLD.id, OLD.match_kickoff;
     END IF;
 
+    -- Before kickoff: allow. A BEFORE DELETE trigger must return OLD (returning
+    -- NEW, which is NULL for DELETE, would silently cancel the delete).
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

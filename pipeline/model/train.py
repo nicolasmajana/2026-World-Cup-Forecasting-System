@@ -16,13 +16,16 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection, load_historical_from_db  # noqa: E402
-from data.features import compute_team_rolling_strengths, build_match_features  # noqa: E402
+from data.features import (  # noqa: E402
+    compute_team_rolling_strengths, add_elo_columns, build_match_features,
+    build_fixture_feature_pair,
+)
 from model.poisson_model import (  # noqa: E402
-    PoissonGoalModel, brier_score, FEATURE_COLS,
+    PoissonGoalModel, FEATURE_COLS,
 )
 
 TRAIN_CUTOFF = pd.Timestamp("2024-01-01")
-MODEL_VERSION = "poisson-v1"
+MODEL_VERSION = "poisson-v2"
 
 
 def git_sha() -> str:
@@ -50,28 +53,28 @@ def connect_with_retry(attempts: int = 5, delay: float = 5.0):
     raise last
 
 
-def feature_pair_for_match(m, rolling, elo_map):
-    """Build (home_features, away_features) dicts for one match row, or None."""
-    out = {}
-    for side, opp in (("home", "away"), ("away", "home")):
-        code, opp_code = m[f"{side}_code"], m[f"{opp}_code"]
-        try:
-            atk = rolling.loc[(m["match_date"], code), "attack_strength"]
-            dfs = rolling.loc[(m["match_date"], code), "defense_strength"]
-            opp_dfs = rolling.loc[(m["match_date"], opp_code), "defense_strength"]
-        except KeyError:
-            return None
-        if pd.isna(atk) or pd.isna(dfs) or pd.isna(opp_dfs):
-            return None
-        venue_enc = 1 if side == "home" and m["venue_type"] == "home" else (
-            -1 if side == "away" and m["venue_type"] == "away" else 0
-        )
-        out[side] = {
-            "attack_strength": atk, "defense_strength": dfs,
-            "opp_defense_strength": opp_dfs,
-            "elo": elo_map.get(code, 1500), "venue_enc": venue_enc,
-        }
-    return out["home"], out["away"]
+def feature_pair_for_match(m, rolling):
+    """Build (home_features, away_features) dicts for one historical match,
+    using the team's form and pre-match Elo as of that date. Returns None if
+    either team lacks enough history."""
+    try:
+        h_atk = rolling.loc[(m["match_date"], m["home_code"]), "attack_strength"]
+        h_def = rolling.loc[(m["match_date"], m["home_code"]), "defense_strength"]
+        a_atk = rolling.loc[(m["match_date"], m["away_code"]), "attack_strength"]
+        a_def = rolling.loc[(m["match_date"], m["away_code"]), "defense_strength"]
+    except KeyError:
+        return None
+    if any(pd.isna(v) for v in (h_atk, h_def, a_atk, a_def)):
+        return None
+
+    he, ae = m["home_elo_pre"], m["away_elo_pre"]
+    home = {"attack_strength": h_atk, "defense_strength": h_def,
+            "opp_defense_strength": a_def, "elo": he, "elo_diff": he - ae,
+            "venue_enc": 1 if m["venue_type"] == "home" else 0}
+    away = {"attack_strength": a_atk, "defense_strength": a_def,
+            "opp_defense_strength": h_def, "elo": ae, "elo_diff": ae - he,
+            "venue_enc": -1 if m["venue_type"] == "away" else 0}
+    return home, away
 
 
 def main():
@@ -80,35 +83,32 @@ def main():
     print(f"  {len(hist):,} matches, {hist['match_date'].min().date()} -> "
           f"{hist['match_date'].max().date()}")
 
+    print("Computing time-varying Elo from match history…")
+    hist, latest_elo = add_elo_columns(hist)
+    print(f"  Elo computed for {len(latest_elo)} teams.")
+
     print("Computing rolling attack/defense strengths…")
     rolling = compute_team_rolling_strengths(hist)
-
-    # Load Elo from the DB (teams.fifa_elo). Teams without a value fall back
-    # to 1500 inside the feature builder.
-    conn0 = get_connection()
-    with conn0.cursor() as cur:
-        cur.execute("SELECT fifa_code, fifa_elo FROM teams WHERE fifa_elo IS NOT NULL")
-        elo_map = {code: elo for code, elo in cur.fetchall()}
-    conn0.close()
-    print(f"Loaded Elo for {len(elo_map)} teams.")
 
     train = hist[hist["match_date"] < TRAIN_CUTOFF]
     val = hist[hist["match_date"] >= TRAIN_CUTOFF]
     print(f"Train: {len(train):,}  |  Val: {len(val):,}")
 
     print("Building training features…")
-    train_feats = build_match_features(train, elo_map, rolling)
+    train_feats = build_match_features(train, rolling)
     print(f"  {len(train_feats):,} team-match training rows")
 
-    print("Fitting Poisson model…")
-    model = PoissonGoalModel().fit(train_feats)
+    print("Fitting Poisson model (competition-weighted)…")
+    model = PoissonGoalModel().fit(
+        train_feats, sample_weight=train_feats["weight"].to_numpy()
+    )
 
     print("Evaluating on 2024-2025 hold-out (Brier score)…")
     # Collect feature rows for every val match with enough history, then score
     # them all in ONE vectorized call (exact analytic probabilities).
     home_rows, away_rows, outcomes = [], [], []
     for _, m in val.iterrows():
-        pair = feature_pair_for_match(m, rolling, elo_map)
+        pair = feature_pair_for_match(m, rolling)
         if pair is None:
             continue
         home_rows.append(pair[0])
@@ -148,7 +148,7 @@ def main():
     # ── Persist results LOCALLY first, so the expensive compute is never
     #    lost to a network blip during the DB write. ────────────────
     params = {"alpha": 0.1, "features": FEATURE_COLS, "n_sims": 10000,
-              "elo_loaded": len(elo_map) > 0}
+              "elo": "self-computed time-varying", "competition_weighted": True}
     result = {
         "model_version": MODEL_VERSION,
         "train_cutoff": str(TRAIN_CUTOFF.date()),
@@ -183,24 +183,12 @@ def main():
     print(f"Logged model_run id={run_id}.")
 
     # ── Show a few real 2026 predictions ──────────────────────────
-    print("\nSample 2026 predictions (using each team's latest form):")
-    show_sample_predictions(model, rolling, elo_map, conn)
+    print("\nSample 2026 predictions (using each team's latest form + Elo):")
+    show_sample_predictions(model, rolling, latest_elo, conn)
     conn.close()
 
 
-def latest_strength(rolling, code):
-    """Most recent rolling attack/defense for a team code."""
-    try:
-        sub = rolling.xs(code, level="team_code").dropna()
-        if sub.empty:
-            return None
-        last = sub.iloc[-1]
-        return last["attack_strength"], last["defense_strength"]
-    except KeyError:
-        return None
-
-
-def show_sample_predictions(model, rolling, elo_map, conn):
+def show_sample_predictions(model, rolling, latest_elo, conn):
     df = pd.read_sql(
         """
         SELECT ht.fifa_code AS home_code, ht.name AS home,
@@ -216,17 +204,12 @@ def show_sample_predictions(model, rolling, elo_map, conn):
         conn,
     )
     for _, m in df.iterrows():
-        hs = latest_strength(rolling, m["home_code"])
-        as_ = latest_strength(rolling, m["away_code"])
-        if hs is None or as_ is None:
+        pair = build_fixture_feature_pair(
+            m["home_code"], m["away_code"], rolling, latest_elo
+        )
+        if pair is None:
             continue
-        home_f = {"attack_strength": hs[0], "defense_strength": hs[1],
-                  "opp_defense_strength": as_[1],
-                  "elo": elo_map.get(m["home_code"], 1500), "venue_enc": 0}
-        away_f = {"attack_strength": as_[0], "defense_strength": as_[1],
-                  "opp_defense_strength": hs[1],
-                  "elo": elo_map.get(m["away_code"], 1500), "venue_enc": 0}
-        p = model.predict_match(home_f, away_f)
+        p = model.predict_match(pair[0], pair[1])
         print(f"\n  {m['home']} vs {m['away']}  (Group {m['group_name']})")
         print(f"    xG: {p['xg_home']:.2f} - {p['xg_away']:.2f}")
         print(f"    {m['home']} win {p['p_home_win']*100:4.1f}%  |  "

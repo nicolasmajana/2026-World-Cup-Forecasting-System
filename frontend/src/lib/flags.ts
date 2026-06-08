@@ -25,13 +25,14 @@ export function flagUrl(teamName: string, width: 20 | 40 | 80 = 40): string | nu
 }
 
 /**
- * Most likely scoreline from expected goals: the modal Poisson count for each
- * side is floor(lambda). Returns "2-1" style, or null if xG is missing.
+ * Most likely scoreline from expected goals. We round each side's expected
+ * goals to the nearest whole number, which tracks the dominant scorelines
+ * better than flooring (which always rounded down). Returns "2-1" style.
  */
 export function predictedScore(
   xgHome: string | null,
   xgAway: string | null,
 ): string | null {
   if (xgHome == null || xgAway == null) return null;
-  return `${Math.floor(parseFloat(xgHome))}-${Math.floor(parseFloat(xgAway))}`;
+  return `${Math.round(parseFloat(xgHome))}-${Math.round(parseFloat(xgAway))}`;
 }

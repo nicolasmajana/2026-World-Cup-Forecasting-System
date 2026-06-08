@@ -12,6 +12,7 @@ FEATURE_COLS = [
     "defense_strength",
     "opp_defense_strength",
     "elo",
+    "elo_diff",
     "venue_enc",
 ]
 
@@ -23,10 +24,10 @@ class PoissonGoalModel:
         self.model = PoissonRegressor(alpha=0.1, max_iter=300)
         self.scaler = StandardScaler()
 
-    def fit(self, features: pd.DataFrame) -> "PoissonGoalModel":
+    def fit(self, features: pd.DataFrame, sample_weight=None) -> "PoissonGoalModel":
         X = self.scaler.fit_transform(features[FEATURE_COLS])
         y = features["goals_scored"].values
-        self.model.fit(X, y)
+        self.model.fit(X, y, sample_weight=sample_weight)
         return self
 
     def predict_lambda(self, features: pd.DataFrame) -> np.ndarray:

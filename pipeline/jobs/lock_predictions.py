@@ -14,7 +14,10 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from data.loader import get_connection, load_historical_from_db, load_upcoming_fixtures
-from data.features import compute_team_rolling_strengths, build_match_features
+from data.features import (
+    compute_team_rolling_strengths, add_elo_columns, build_match_features,
+    build_fixture_feature_pair,
+)
 from model.poisson_model import PoissonGoalModel
 
 load_dotenv()
@@ -65,33 +68,25 @@ def main():
     print(f"Found {len(upcoming)} fixture(s) needing predictions.")
 
     historical = load_historical_from_db()
+    historical, latest_elo = add_elo_columns(historical)
     rolling = compute_team_rolling_strengths(historical)
 
     conn = get_connection()
-    elo_map = load_elo_map(conn)
     model_run_id = get_latest_model_run_id(conn)
 
-    # Train model on all historical data
-    feature_df = build_match_features(historical, elo_map, rolling)
-    model = PoissonGoalModel().fit(feature_df)
+    # Train model on all historical data (competition-weighted)
+    feats = build_match_features(historical, rolling)
+    model = PoissonGoalModel().fit(feats, sample_weight=feats["weight"].to_numpy())
 
     for _, fixture in upcoming.iterrows():
-        # Build feature rows for both teams
-        home_row = feature_df[
-            (feature_df["match_date"] <= fixture["kickoff_utc"].date()) &
-            (feature_df["team_code"] == fixture["home_code"])
-        ].sort_values("match_date").iloc[-1] if not feature_df.empty else None
-
-        away_row = feature_df[
-            (feature_df["match_date"] <= fixture["kickoff_utc"].date()) &
-            (feature_df["team_code"] == fixture["away_code"])
-        ].sort_values("match_date").iloc[-1] if not feature_df.empty else None
-
-        if home_row is None or away_row is None:
+        pair = build_fixture_feature_pair(
+            fixture["home_code"], fixture["away_code"], rolling, latest_elo
+        )
+        if pair is None:
             print(f"Skipping fixture {fixture['fixture_id']}: insufficient history.")
             continue
 
-        pred = model.predict_match(home_row.to_dict(), away_row.to_dict())
+        pred = model.predict_match(pair[0], pair[1])
 
         write_prediction(
             conn,

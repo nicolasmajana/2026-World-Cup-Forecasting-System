@@ -163,8 +163,8 @@ export async function getScorelineAccuracy(): Promise<ScorelineAccuracy> {
        COUNT(*) FILTER (WHERE f.home_goals IS NOT NULL)::int AS played,
        COUNT(*) FILTER (
          WHERE f.home_goals IS NOT NULL
-           AND floor(p.xg_home) = f.home_goals
-           AND floor(p.xg_away) = f.away_goals
+           AND round(p.xg_home) = f.home_goals
+           AND round(p.xg_away) = f.away_goals
        )::int AS exact_hits,
        COUNT(*) FILTER (
          WHERE f.home_goals IS NOT NULL

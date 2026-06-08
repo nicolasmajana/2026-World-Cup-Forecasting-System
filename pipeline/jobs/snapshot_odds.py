@@ -20,7 +20,10 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection, load_historical_from_db  # noqa: E402
-from data.features import compute_team_rolling_strengths, build_match_features  # noqa: E402
+from data.features import (  # noqa: E402
+    compute_team_rolling_strengths, add_elo_columns, build_match_features,
+    build_fixture_feature_pair,
+)
 from model.poisson_model import PoissonGoalModel  # noqa: E402
 
 MIGRATION = os.path.join(
@@ -29,33 +32,22 @@ MIGRATION = os.path.join(
 )
 
 
-def latest_strength(rolling, code):
-    try:
-        sub = rolling.xs(code, level="team_code").dropna()
-        if sub.empty:
-            return None
-        last = sub.iloc[-1]
-        return float(last["attack_strength"]), float(last["defense_strength"])
-    except KeyError:
-        return None
-
-
 def main():
     conn = get_connection()
     with conn.cursor() as cur:
         with open(MIGRATION) as f:
             cur.execute(f.read())  # ensure table exists
         conn.commit()
-        cur.execute("SELECT fifa_code, fifa_elo FROM teams WHERE fifa_elo IS NOT NULL")
-        elo_map = {c: e for c, e in cur.fetchall()}
         cur.execute("SELECT id FROM model_runs ORDER BY run_at DESC LIMIT 1")
         row = cur.fetchone()
         model_run_id = row[0] if row else None
 
     print("Training model on latest data...")
     hist = load_historical_from_db()
+    hist, latest_elo = add_elo_columns(hist)
     rolling = compute_team_rolling_strengths(hist)
-    model = PoissonGoalModel().fit(build_match_features(hist, elo_map, rolling))
+    feats = build_match_features(hist, rolling)
+    model = PoissonGoalModel().fit(feats, sample_weight=feats["weight"].to_numpy())
 
     fixtures = pd.read_sql(
         """
@@ -77,17 +69,12 @@ def main():
 
     inserted = 0
     for _, fx in fixtures.iterrows():
-        hs = latest_strength(rolling, fx["home_code"])
-        as_ = latest_strength(rolling, fx["away_code"])
-        if hs is None or as_ is None:
+        pair = build_fixture_feature_pair(
+            fx["home_code"], fx["away_code"], rolling, latest_elo
+        )
+        if pair is None:
             continue
-        home_f = {"attack_strength": hs[0], "defense_strength": hs[1],
-                  "opp_defense_strength": as_[1],
-                  "elo": elo_map.get(fx["home_code"], 1500), "venue_enc": 0}
-        away_f = {"attack_strength": as_[0], "defense_strength": as_[1],
-                  "opp_defense_strength": hs[1],
-                  "elo": elo_map.get(fx["away_code"], 1500), "venue_enc": 0}
-        pred = model.predict_match(home_f, away_f)
+        pred = model.predict_match(pair[0], pair[1])
         with conn.cursor() as cur:
             cur.execute(
                 """
