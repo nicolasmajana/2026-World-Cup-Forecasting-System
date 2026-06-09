@@ -14,7 +14,7 @@ INSERT INTO teams (fifa_code, name, confederation, martj42_name, elo_name, fbref
     ('CZE', 'Czechia',              'UEFA',     'Czech Republic',       'Czech Republic', 'Czech Republic',       'Czechia'),
     ('MKD', 'North Macedonia',      'UEFA',     'North Macedonia',      'North Macedonia','North Macedonia',      'North Macedonia'),
     ('COD', 'DR Congo',             'CAF',      'DR Congo',             'Congo DR',       'Congo DR',             'DR Congo'),
-    ('BIH', 'Bosnia and Herzegovina','UEFA',    'Bosnia-Herzegovina',   'Bosnia-Herzegovina','Bosnia-Herzegovina','Bosnia and Herzegovina'),
+    ('BIH', 'Bosnia and Herzegovina','UEFA',    'Bosnia and Herzegovina','Bosnia-Herzegovina','Bosnia-Herzegovina','Bosnia and Herzegovina'),
     ('TRI', 'Trinidad and Tobago',  'CONCACAF', 'Trinidad and Tobago',  'Trinidad & Tobago','Trinidad and Tobago','Trinidad and Tobago'),
     ('CPV', 'Cape Verde',           'CAF',      'Cape Verde',           'Cape Verde',     'Cape Verde',           'Cabo Verde')
 ON CONFLICT (fifa_code) DO UPDATE SET

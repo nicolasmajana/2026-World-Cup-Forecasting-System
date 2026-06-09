@@ -14,6 +14,7 @@ const NAME_TO_FLAG: Record<string, string> = {
   Senegal: "sn", "South Africa": "za", "South Korea": "kr", Spain: "es",
   Sweden: "se", Switzerland: "ch", Tunisia: "tn", Turkey: "tr",
   "United States": "us", Uruguay: "uy", Uzbekistan: "uz",
+  "Bosnia and Herzegovina": "ba", "Bosnia & Herzegovina": "ba",
   Wales: "gb-wls", "Northern Ireland": "gb-nir", Italy: "it",
   Nigeria: "ng", Cameroon: "cm", Chile: "cl", Peru: "pe",
 };

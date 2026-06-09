@@ -176,6 +176,45 @@ export async function getScorelineAccuracy(): Promise<ScorelineAccuracy> {
   return rows[0] ?? { played: 0, exact_hits: 0, outcome_hits: 0 };
 }
 
+export type TeamOdds = {
+  code: string;
+  name: string;
+  champion: number;
+  final: number;
+  semifinal: number;
+  quarterfinal: number;
+  r16: number;
+  group_winner: number;
+};
+
+export type PredictedMatch = {
+  num: number;
+  home: string;
+  away: string;
+  winner: string;
+  home_pct: number;
+  away_pct: number;
+};
+
+export type TournamentSim = {
+  simulated_at: string;
+  n_sims: number;
+  team_odds: TeamOdds[];
+  predicted_bracket: {
+    champion: string | null;
+    rounds: { key: string; label: string; matches: PredictedMatch[] }[];
+  };
+};
+
+/** The latest full-tournament Monte Carlo simulation. */
+export async function getTournamentSim(): Promise<TournamentSim | null> {
+  const rows = await query<TournamentSim>(
+    `SELECT simulated_at, n_sims, team_odds, predicted_bracket
+     FROM tournament_sim ORDER BY simulated_at DESC LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}
+
 /** Metadata about the latest model run (for the footer / methodology hook). */
 export async function getLatestModelRun() {
   const rows = await query<{
