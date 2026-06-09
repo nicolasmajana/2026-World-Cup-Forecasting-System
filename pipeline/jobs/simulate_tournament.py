@@ -21,6 +21,7 @@ from collections import defaultdict, Counter
 import numpy as np
 import pandas as pd
 import requests
+from scipy.stats import poisson
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection, load_historical_from_db  # noqa: E402
@@ -124,8 +125,7 @@ def sample_score(xg, rng, h, a):
     return rng.poisson(xg[(h, a)]), rng.poisson(xg[(a, h)])
 
 
-def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
-                  r32_pairs):
+def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally):
     placements = {}  # '1A', '2B' -> code
     thirds = []      # (code, group_letter, pts, gd, gf)
 
@@ -179,8 +179,6 @@ def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
         if num in ROUND_OF:
             tally[ROUND_OF[num]][t1] += 1
             tally[ROUND_OF[num]][t2] += 1
-        if num in (73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88):
-            r32_pairs[num][(t1, t2)] += 1
         gh, ga = sample_score(xg, rng, t1, t2)
         if gh > ga:
             w, loser = t1, t2
@@ -263,9 +261,8 @@ def main():
     rng = np.random.default_rng()
     tally = {k: defaultdict(int) for k in
              ("group_winner", "r32", "r16", "qf", "sf", "final", "champion")}
-    r32_pairs = defaultdict(Counter)
     for _ in range(N_SIMS):
-        simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally, r32_pairs)
+        simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally)
 
     # Per-team probabilities
     team_odds = []
@@ -281,7 +278,7 @@ def main():
         })
     team_odds.sort(key=lambda t: t["champion"], reverse=True)
 
-    bracket = build_predicted_bracket(ko, r32_pairs, xg, names)
+    bracket = build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -298,53 +295,78 @@ def main():
               f"final {t['final']*100:5.1f}%")
 
 
-def build_predicted_bracket(ko, r32_pairs, xg, names):
-    """Single most-likely path: take the modal R32 matchup for each slot, then
-    advance the favorite (higher expected goals) through to the final."""
+def analytic_wdl(xh, xa, maxg=10):
+    """Exact (home win, draw, away win) for two independent Poisson scorelines."""
+    ks = np.arange(maxg + 1)
+    m = np.outer(poisson.pmf(ks, xh), poisson.pmf(ks, xa))
+    p_home = float(np.tril(m, -1).sum())
+    draw = float(np.trace(m))
+    return p_home, draw, float(1 - p_home - draw)
+
+
+def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
+    """Single most-likely bracket from ONE consistent set of standings (expected
+    points per group), so a team can never appear in two matches of the same
+    round. Then advance the favorite (higher expected goals)."""
+    placements = {}   # '1A', '2B' -> code
+    thirds = []       # (code, group_letter, exp_pts, exp_gd)
+    for g, teams in groups.items():
+        exp_pts = {c: 0.0 for c in teams}
+        exp_gd = {c: 0.0 for c in teams}
+        for h, a in group_matches[g]:
+            ph, dr, pa = analytic_wdl(xg[(h, a)], xg[(a, h)])
+            exp_pts[h] += 3 * ph + dr
+            exp_pts[a] += 3 * pa + dr
+            exp_gd[h] += xg[(h, a)] - xg[(a, h)]
+            exp_gd[a] += xg[(a, h)] - xg[(h, a)]
+        ranked = sorted(teams, key=lambda c: (exp_pts[c], exp_gd[c]), reverse=True)
+        letter = g.replace("Group ", "")
+        placements[f"1{letter}"] = ranked[0]
+        placements[f"2{letter}"] = ranked[1]
+        thirds.append((ranked[2], letter, exp_pts[ranked[2]], exp_gd[ranked[2]]))
+
+    thirds.sort(key=lambda t: (t[2], t[3]), reverse=True)
+    top8 = [(c, grp) for c, grp, *_ in thirds[:8]]
+    for key, code in assign_thirds(top8, third_slots).items():
+        placements[key] = code  # key like '74:1'
+
     def fav(a, b):
         return a if xg[(a, b)] >= xg[(b, a)] else b
 
-    def card(num, a, b):
-        w = fav(a, b)
-        total = xg[(a, b)] + xg[(b, a)]
-        return {
-            "num": num,
-            "home": names.get(a, a), "away": names.get(b, b),
-            "winner": names.get(w, w),
-            "home_pct": round(xg[(a, b)] / total * 100),
-            "away_pct": round(xg[(b, a)] / total * 100),
-        }, w
+    def resolve(ref, winners, num, side):
+        if ref in placements:
+            return placements[ref]
+        if isinstance(ref, str) and ref.startswith("W"):
+            return winners.get(int(ref[1:]))
+        return placements.get(f"{num}:{side}")  # a third-place slot
 
     winners, rounds = {}, defaultdict(list)
     for m in ko:
         num, rnd = m["num"], m["round"]
-        if num in r32_pairs and r32_pairs[num]:
-            a, b = r32_pairs[num].most_common(1)[0][0]
-        else:
-            a = winners.get(_wnum(m["ref1"]))
-            b = winners.get(_wnum(m["ref2"]))
+        a = resolve(m["ref1"], winners, num, "1")
+        b = resolve(m["ref2"], winners, num, "2")
         if a is None or b is None:
             continue
-        c, w = card(num, a, b)
+        w = fav(a, b)
+        total = xg[(a, b)] + xg[(b, a)]
+        rounds[rnd].append({
+            "num": num, "home": names.get(a, a), "away": names.get(b, b),
+            "winner": names.get(w, w),
+            "home_pct": round(xg[(a, b)] / total * 100),
+            "away_pct": round(xg[(b, a)] / total * 100),
+        })
         winners[num] = w
-        rounds[rnd].append(c)
 
     # stage_for() returns "f" for the Final
     order = ["r32", "r16", "qf", "sf", "f"]
     labels = {"r32": "Round of 32", "r16": "Round of 16", "qf": "Quarter-finals",
               "sf": "Semi-finals", "f": "Final"}
-    champion = None
-    if rounds["f"]:
-        champion = rounds["f"][0]["winner"]
+    champion = rounds["f"][0]["winner"] if rounds["f"] else None
     return {
         "champion": champion,
         "rounds": [{"key": k, "label": labels[k], "matches": rounds[k]}
                    for k in order if rounds[k]],
     }
-
-
-def _wnum(ref):
-    return int(ref[1:]) if isinstance(ref, str) and ref.startswith("W") else None
 
 
 if __name__ == "__main__":
