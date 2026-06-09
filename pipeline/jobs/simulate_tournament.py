@@ -133,8 +133,8 @@ def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally):
         pts = {c: 0 for c in teams}
         gd = {c: 0 for c in teams}
         gf = {c: 0 for c in teams}
-        for h, a in group_matches[g]:
-            gh, ga = sample_score(xg, rng, h, a)
+        for h, a, actual in group_matches[g]:
+            gh, ga = actual if actual is not None else sample_score(xg, rng, h, a)
             gf[h] += gh; gf[a] += ga
             gd[h] += gh - ga; gd[a] += ga - gh
             if gh > ga:
@@ -213,12 +213,15 @@ def main():
         row = cur.fetchone()
         model_run_id = row[0] if row else None
 
-    # Groups, group fixtures, and display names from the DB
+    # Groups, group fixtures, results, and display names from the DB. Matches
+    # already played carry an actual score so the simulation is conditioned on
+    # reality (a finished result is used as-is instead of being re-sampled).
     df = pd.read_sql(
         """
         SELECT f.group_name,
                ht.fifa_code AS home_code, ht.name AS home_name,
-               at.fifa_code AS away_code, at.name AS away_name
+               at.fifa_code AS away_code, at.name AS away_name,
+               f.home_goals, f.away_goals
         FROM fixtures f
         LEFT JOIN teams ht ON ht.id = f.home_team_id
         LEFT JOIN teams at ON at.id = f.away_team_id
@@ -230,6 +233,7 @@ def main():
     groups = defaultdict(set)
     group_matches = defaultdict(list)
     names = {PLAYOFF: "Playoff Winner"}
+    n_played = 0
     for _, r in df.iterrows():
         g = r["group_name"]
         h = r["home_code"] if pd.notna(r["home_code"]) else PLAYOFF
@@ -238,8 +242,14 @@ def main():
             names[r["home_code"]] = r["home_name"]
         if pd.notna(r["away_name"]):
             names[r["away_code"]] = r["away_name"]
+        actual = None
+        if pd.notna(r["home_goals"]) and pd.notna(r["away_goals"]):
+            actual = (int(r["home_goals"]), int(r["away_goals"]))
+            n_played += 1
         groups[g].update([h, a])
-        group_matches[g].append((h, a))
+        group_matches[g].append((h, a, actual))
+    if n_played:
+        print(f"Conditioning on {n_played} finished group match(es).")
 
     teams = sorted({c for s in groups.values() for c in s})
 
@@ -313,12 +323,19 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
     standings = {}    # group -> {ranked, st}
     for g, teams in groups.items():
         st = {c: {"w": 0.0, "d": 0.0, "l": 0.0, "gf": 0.0, "ga": 0.0} for c in teams}
-        for h, a in group_matches[g]:
-            ph, dr, pa = analytic_wdl(xg[(h, a)], xg[(a, h)])
+        for h, a, actual in group_matches[g]:
+            if actual is not None:
+                gh, ga = actual
+                ph, dr, pa = (1.0, 0.0, 0.0) if gh > ga else (
+                    (0.0, 1.0, 0.0) if gh == ga else (0.0, 0.0, 1.0))
+                xfh, xfa = float(gh), float(ga)
+            else:
+                ph, dr, pa = analytic_wdl(xg[(h, a)], xg[(a, h)])
+                xfh, xfa = xg[(h, a)], xg[(a, h)]
             st[h]["w"] += ph; st[h]["d"] += dr; st[h]["l"] += pa
             st[a]["w"] += pa; st[a]["d"] += dr; st[a]["l"] += ph
-            st[h]["gf"] += xg[(h, a)]; st[h]["ga"] += xg[(a, h)]
-            st[a]["gf"] += xg[(a, h)]; st[a]["ga"] += xg[(h, a)]
+            st[h]["gf"] += xfh; st[h]["ga"] += xfa
+            st[a]["gf"] += xfa; st[a]["ga"] += xfh
         for c in teams:
             st[c]["pts"] = 3 * st[c]["w"] + st[c]["d"]
             st[c]["gd"] = st[c]["gf"] - st[c]["ga"]

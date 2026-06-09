@@ -1,33 +1,53 @@
-import type { PredictedMatch } from "@/lib/queries";
 import { Flag } from "./Flag";
+import { flagUrl } from "@/lib/flags";
 
 const BOX_W = 150;
 const STUB = 14;
 const COL_W = BOX_W + STUB * 2;
 const LINE = "var(--color-mute)";
 
-type Round = { key: string; label: string; matches: PredictedMatch[] };
+// Generic bracket match: home/away may be team names OR slot labels
+// ("Winner A"). pct is hidden when null; the flag shows only for real teams.
+export type BracketMatch = {
+  num: number;
+  half: "L" | "R" | "C";
+  home: string;
+  away: string;
+  winner?: string | null;
+  home_pct?: number | null;
+  away_pct?: number | null;
+};
 
-function half(matches: PredictedMatch[], side: "L" | "R") {
+type Round = { key: string; label: string; matches: BracketMatch[] };
+
+function half(matches: BracketMatch[], side: "L" | "R") {
   return matches.filter((m) => m.half === side).sort((a, b) => a.num - b.num);
 }
 
-function Row({ name, pct, win }: { name: string; pct: number; win: boolean }) {
+function Row({ name, pct, win }: { name: string; pct?: number | null; win: boolean }) {
+  const hasFlag = flagUrl(name) != null;
   return (
     <div className={`flex items-center justify-between gap-1.5 px-1.5 py-1 ${win ? "bg-tomato-50" : ""}`}>
       <span className="flex min-w-0 items-center gap-1.5">
-        <Flag team={name} size={16} />
-        <span className={`truncate text-[11px] ${win ? "font-bold text-ink" : "text-mute"}`}>
+        {hasFlag && <Flag team={name} size={16} />}
+        <span
+          className={`truncate text-[11px] ${
+            win ? "font-bold text-ink" : hasFlag ? "text-mute" : "italic text-mute/80"
+          }`}
+        >
           {name}
         </span>
       </span>
-      <span className="shrink-0 text-[10px] font-bold text-tomato">{pct}%</span>
+      {pct != null && (
+        <span className="shrink-0 text-[10px] font-bold text-tomato">{pct}%</span>
+      )}
     </div>
   );
 }
 
-function MatchBox({ m }: { m: PredictedMatch }) {
-  const homeWin = m.winner === m.home;
+function MatchBox({ m }: { m: BracketMatch }) {
+  const homeWin = !!m.winner && m.winner === m.home;
+  const awayWin = !!m.winner && m.winner === m.away;
   return (
     <div
       className="overflow-hidden rounded-md border border-mute/30 bg-paper shadow-sm"
@@ -35,7 +55,7 @@ function MatchBox({ m }: { m: PredictedMatch }) {
     >
       <Row name={m.home} pct={m.home_pct} win={homeWin} />
       <div className="border-t border-mute/15" />
-      <Row name={m.away} pct={m.away_pct} win={!homeWin} />
+      <Row name={m.away} pct={m.away_pct} win={awayWin} />
     </div>
   );
 }
@@ -93,7 +113,7 @@ function Column({
   side,
   withConnector,
 }: {
-  matches: PredictedMatch[];
+  matches: BracketMatch[];
   side: "L" | "R" | "C";
   withConnector: boolean;
 }) {
@@ -115,7 +135,7 @@ function Column({
 }
 
 export function CenteredBracket({ rounds }: { rounds: Round[] }) {
-  const byKey: Record<string, PredictedMatch[]> = {};
+  const byKey: Record<string, BracketMatch[]> = {};
   for (const r of rounds) byKey[r.key] = r.matches;
   const order = ["r32", "r16", "qf", "sf"];
   const left = order.map((k) => half(byKey[k] ?? [], "L"));

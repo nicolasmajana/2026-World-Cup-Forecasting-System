@@ -234,6 +234,41 @@ export async function getTournamentSim(): Promise<TournamentSim | null> {
   return rows[0] ?? null;
 }
 
+export type ChampionHistory = {
+  columns: string[]; // one ISO timestamp per day (the latest run that day)
+  teams: { code: string; name: string; values: (number | null)[] }[];
+};
+
+/** Champion probability per team over time: one column per day (the latest
+ * simulation that day), so you can watch the odds move as results come in. */
+export async function getChampionHistory(topN = 10): Promise<ChampionHistory> {
+  const rows = await query<{ simulated_at: string; team_odds: TeamOdds[] }>(
+    `SELECT DISTINCT ON (date_trunc('day', simulated_at AT TIME ZONE 'America/New_York'))
+            simulated_at, team_odds
+     FROM tournament_sim
+     ORDER BY date_trunc('day', simulated_at AT TIME ZONE 'America/New_York'),
+              simulated_at DESC`,
+  );
+  if (rows.length === 0) return { columns: [], teams: [] };
+
+  const latest = rows[rows.length - 1];
+  const top = [...latest.team_odds]
+    .sort((a, b) => b.champion - a.champion)
+    .slice(0, topN);
+
+  return {
+    columns: rows.map((r) => r.simulated_at),
+    teams: top.map((t) => ({
+      code: t.code,
+      name: t.name,
+      values: rows.map((r) => {
+        const e = r.team_odds.find((o) => o.code === t.code);
+        return e ? e.champion : null;
+      }),
+    })),
+  };
+}
+
 /** Metadata about the latest model run (for the footer / methodology hook). */
 export async function getLatestModelRun() {
   const rows = await query<{

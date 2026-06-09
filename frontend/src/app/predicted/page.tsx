@@ -1,7 +1,8 @@
-import { getTournamentSim } from "@/lib/queries";
+import { getTournamentSim, getChampionHistory } from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { GroupStandings } from "@/components/GroupStandings";
 import { CenteredBracket } from "@/components/CenteredBracket";
+import { ChampionHistory } from "@/components/ChampionHistory";
 import { formatDateTime } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,10 @@ function pct(v: number) {
 }
 
 export default async function PredictedPage() {
-  const sim = await getTournamentSim();
+  const [sim, history] = await Promise.all([
+    getTournamentSim(),
+    getChampionHistory(10),
+  ]);
 
   if (!sim) {
     return (
@@ -85,8 +89,23 @@ export default async function PredictedPage() {
         </p>
       </section>
 
+      {/* Champion odds over time */}
+      {history.teams.length > 0 && (
+        <section className="mt-10">
+          <h2 className="mb-2 text-xl font-bold text-ink">
+            Champion odds over time
+          </h2>
+          <p className="mb-4 text-sm text-mute">
+            The model re-simulates the tournament every day and conditions on
+            results as they come in, so these odds shift as the World Cup
+            unfolds.
+          </p>
+          <ChampionHistory data={history} />
+        </section>
+      )}
+
       {/* Round-by-round table */}
-      <section className="mt-8 overflow-x-auto">
+      <section className="mt-10 overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b border-mute/30 text-left text-xs uppercase tracking-wide text-mute">
