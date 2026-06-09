@@ -30,3 +30,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python pipeline/jobs/snapshot_odds.py
+
+      - name: Re-simulate the tournament
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/jobs/simulate_tournament.py 5000
