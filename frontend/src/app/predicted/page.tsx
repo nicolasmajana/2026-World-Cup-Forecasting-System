@@ -2,6 +2,7 @@ import { getTournamentSim } from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { GroupStandings } from "@/components/GroupStandings";
 import { CenteredBracket } from "@/components/CenteredBracket";
+import { formatDateTime } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -145,7 +146,7 @@ export default async function PredictedPage() {
       </section>
 
       <p className="mt-8 text-xs text-mute">
-        Simulated {new Date(sim.simulated_at).toLocaleString()}.
+        Simulated {formatDateTime(sim.simulated_at)} ET.
       </p>
     </main>
   );

@@ -1,4 +1,5 @@
 import { getLatestModelRun } from "@/lib/queries";
+import { formatDate } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ export default async function MethodologyPage() {
         <p className="mt-10 border-t border-mute/20 pt-6 text-xs text-mute">
           Current model: <code>{run.model_version}</code>, trained on{" "}
           {run.n_train_matches?.toLocaleString()} matches, last run{" "}
-          {new Date(run.run_at).toLocaleDateString()}.
+          {formatDate(run.run_at)}.
         </p>
       )}
     </main>

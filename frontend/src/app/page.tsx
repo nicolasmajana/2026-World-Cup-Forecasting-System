@@ -4,6 +4,7 @@ import {
   getCalibrationSummary,
   getLatestModelRun,
 } from "@/lib/queries";
+import { formatDate } from "@/lib/datetime";
 
 // Always render with fresh data from the database.
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export default async function Home() {
             Model <code>{modelRun.model_version}</code> · trained on{" "}
             {modelRun.n_train_matches?.toLocaleString()} matches · hold-out Brier{" "}
             {modelRun.val_brier_score} ·{" "}
-            {new Date(modelRun.run_at).toLocaleDateString()}
+            {formatDate(modelRun.run_at)}
           </p>
         ) : (
           <p>No model run recorded yet.</p>

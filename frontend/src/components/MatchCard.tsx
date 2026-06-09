@@ -2,22 +2,12 @@ import Link from "next/link";
 import type { MatchPrediction } from "@/lib/queries";
 import { Flag } from "./Flag";
 import { predictedScore } from "@/lib/flags";
+import { formatKickoff, formatDate } from "@/lib/datetime";
 
 const COLOMBIA = "COL";
 
 function pct(v: string | null): number {
   return v ? Math.round(parseFloat(v) * 100) : 0;
-}
-
-function formatKickoff(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
 }
 
 /** Probability bar: home (tomato) / draw (sun) / away (slate). */
@@ -100,7 +90,7 @@ export function MatchCard({ m }: { m: MatchPrediction }) {
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-mute">
-        {m.locked_at && <span>🔒 Locked {new Date(m.locked_at).toLocaleDateString()}</span>}
+        {m.locked_at && <span>🔒 Locked {formatDate(m.locked_at)}</span>}
         {played && m.brier_score && <span>Brier {parseFloat(m.brier_score).toFixed(3)}</span>}
       </div>
     </Link>

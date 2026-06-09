@@ -3,6 +3,7 @@ import { getMatchDetail, getOddsHistory } from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { OddsChart } from "@/components/OddsChart";
 import { predictedScore } from "@/lib/flags";
+import { formatDateTime } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +41,7 @@ export default async function MatchPage({
       <p className="text-sm font-semibold uppercase tracking-wide text-mute">
         {m.stage === "group" ? `Group ${m.group_name ?? ""}` : m.stage.toUpperCase()}
         {" · "}
-        {new Date(m.kickoff_utc).toLocaleString("en-US", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })}
+        {formatDateTime(m.kickoff_utc)} ET
       </p>
 
       {/* Scoreline / teams */}
