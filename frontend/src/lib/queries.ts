@@ -194,7 +194,25 @@ export type PredictedMatch = {
   winner: string;
   home_pct: number;
   away_pct: number;
+  half: "L" | "R" | "C";
 };
+
+export type GroupStandingRow = {
+  pos: number;
+  code: string;
+  name: string;
+  w: number;
+  d: number;
+  l: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  pts: number;
+  qualified: boolean;
+  third: boolean;
+};
+
+export type PredictedGroup = { name: string; teams: GroupStandingRow[] };
 
 export type TournamentSim = {
   simulated_at: string;
@@ -202,6 +220,7 @@ export type TournamentSim = {
   team_odds: TeamOdds[];
   predicted_bracket: {
     champion: string | null;
+    groups: PredictedGroup[];
     rounds: { key: string; label: string; matches: PredictedMatch[] }[];
   };
 };

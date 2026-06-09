@@ -309,26 +309,64 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
     points per group), so a team can never appear in two matches of the same
     round. Then advance the favorite (higher expected goals)."""
     placements = {}   # '1A', '2B' -> code
-    thirds = []       # (code, group_letter, exp_pts, exp_gd)
+    thirds = []       # (code, group_letter, pts, gd)
+    standings = {}    # group -> {ranked, st}
     for g, teams in groups.items():
-        exp_pts = {c: 0.0 for c in teams}
-        exp_gd = {c: 0.0 for c in teams}
+        st = {c: {"w": 0.0, "d": 0.0, "l": 0.0, "gf": 0.0, "ga": 0.0} for c in teams}
         for h, a in group_matches[g]:
             ph, dr, pa = analytic_wdl(xg[(h, a)], xg[(a, h)])
-            exp_pts[h] += 3 * ph + dr
-            exp_pts[a] += 3 * pa + dr
-            exp_gd[h] += xg[(h, a)] - xg[(a, h)]
-            exp_gd[a] += xg[(a, h)] - xg[(h, a)]
-        ranked = sorted(teams, key=lambda c: (exp_pts[c], exp_gd[c]), reverse=True)
+            st[h]["w"] += ph; st[h]["d"] += dr; st[h]["l"] += pa
+            st[a]["w"] += pa; st[a]["d"] += dr; st[a]["l"] += ph
+            st[h]["gf"] += xg[(h, a)]; st[h]["ga"] += xg[(a, h)]
+            st[a]["gf"] += xg[(a, h)]; st[a]["ga"] += xg[(h, a)]
+        for c in teams:
+            st[c]["pts"] = 3 * st[c]["w"] + st[c]["d"]
+            st[c]["gd"] = st[c]["gf"] - st[c]["ga"]
+        ranked = sorted(teams, key=lambda c: (st[c]["pts"], st[c]["gd"], st[c]["gf"]),
+                        reverse=True)
         letter = g.replace("Group ", "")
         placements[f"1{letter}"] = ranked[0]
         placements[f"2{letter}"] = ranked[1]
-        thirds.append((ranked[2], letter, exp_pts[ranked[2]], exp_gd[ranked[2]]))
+        thirds.append((ranked[2], letter, st[ranked[2]]["pts"], st[ranked[2]]["gd"]))
+        standings[g] = {"ranked": ranked, "st": st}
 
     thirds.sort(key=lambda t: (t[2], t[3]), reverse=True)
     top8 = [(c, grp) for c, grp, *_ in thirds[:8]]
+    third_q = {c for c, _ in top8}
     for key, code in assign_thirds(top8, third_slots).items():
         placements[key] = code  # key like '74:1'
+
+    # Group tables for display (expected records, rounded)
+    group_tables = []
+    for g in sorted(standings):
+        rows = []
+        for pos, c in enumerate(standings[g]["ranked"], start=1):
+            d = standings[g]["st"][c]
+            rows.append({
+                "pos": pos, "code": c, "name": names.get(c, c),
+                "w": round(d["w"]), "d": round(d["d"]), "l": round(d["l"]),
+                "gf": round(d["gf"]), "ga": round(d["ga"]),
+                "gd": round(d["gd"]), "pts": round(d["pts"], 1),
+                "qualified": pos <= 2, "third": pos == 3 and c in third_q,
+            })
+        group_tables.append({"name": g, "teams": rows})
+
+    # Which half of the draw each knockout match sits in (for a centered tree)
+    parent = {}
+    for m in ko:
+        for ref in (m["ref1"], m["ref2"]):
+            if isinstance(ref, str) and ref.startswith("W"):
+                parent[int(ref[1:])] = m["num"]
+
+    def half(num):
+        if num == 101:
+            return "L"
+        if num == 102:
+            return "R"
+        if num in (103, 104):
+            return "C"
+        p = parent.get(num)
+        return half(p) if p is not None else "C"
 
     def fav(a, b):
         return a if xg[(a, b)] >= xg[(b, a)] else b
@@ -354,6 +392,7 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
             "winner": names.get(w, w),
             "home_pct": round(xg[(a, b)] / total * 100),
             "away_pct": round(xg[(b, a)] / total * 100),
+            "half": half(num),
         })
         winners[num] = w
 
@@ -364,7 +403,9 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
     champion = rounds["f"][0]["winner"] if rounds["f"] else None
     return {
         "champion": champion,
-        "rounds": [{"key": k, "label": labels[k], "matches": rounds[k]}
+        "groups": group_tables,
+        "rounds": [{"key": k, "label": labels[k],
+                    "matches": sorted(rounds[k], key=lambda x: x["num"])}
                    for k in order if rounds[k]],
     }
 

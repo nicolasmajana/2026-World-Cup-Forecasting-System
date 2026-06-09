@@ -1,5 +1,7 @@
-import { getTournamentSim, type PredictedMatch } from "@/lib/queries";
+import { getTournamentSim } from "@/lib/queries";
 import { Flag } from "@/components/Flag";
+import { GroupStandings } from "@/components/GroupStandings";
+import { CenteredBracket } from "@/components/CenteredBracket";
 
 export const dynamic = "force-dynamic";
 
@@ -116,53 +118,35 @@ export default async function PredictedPage() {
         </table>
       </section>
 
+      {/* Predicted group standings */}
+      {sim.predicted_bracket.groups?.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-2 text-xl font-bold text-ink">
+            Predicted group standings
+          </h2>
+          <p className="mb-4 text-sm text-mute">
+            How the model expects each group to finish, which determines who
+            feeds into the bracket below.
+          </p>
+          <GroupStandings groups={sim.predicted_bracket.groups} />
+        </section>
+      )}
+
       {/* Predicted bracket */}
-      <section className="mt-10">
-        <h2 className="mb-4 text-xl font-bold text-ink">Most likely path</h2>
-        <div className="flex gap-5 overflow-x-auto pb-4">
-          {sim.predicted_bracket.rounds.map((r) => (
-            <div key={r.key} className="min-w-[230px] flex-1">
-              <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-mute">
-                {r.label}
-              </h3>
-              <div className="grid gap-3">
-                {r.matches.map((m) => (
-                  <BracketCard key={m.num} m={m} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+      <section className="mt-12">
+        <h2 className="mb-2 text-xl font-bold text-ink">
+          Most likely path to the final
+        </h2>
+        <p className="mb-4 text-sm text-mute">
+          The favorite advances at each step. Percentages are that team&apos;s
+          win chance in the matchup.
+        </p>
+        <CenteredBracket rounds={sim.predicted_bracket.rounds} />
       </section>
 
       <p className="mt-8 text-xs text-mute">
-        Simulated {new Date(sim.simulated_at).toLocaleString()}. The group with an
-        unresolved intercontinental-playoff slot uses a placeholder team.
+        Simulated {new Date(sim.simulated_at).toLocaleString()}.
       </p>
     </main>
-  );
-}
-
-function BracketCard({ m }: { m: PredictedMatch }) {
-  const homeWins = m.winner === m.home;
-  return (
-    <div className="divide-y divide-mute/20 overflow-hidden rounded-lg border border-mute/30 bg-paper shadow-sm">
-      <Row name={m.home} pct={m.home_pct} win={homeWins} />
-      <Row name={m.away} pct={m.away_pct} win={!homeWins} />
-    </div>
-  );
-}
-
-function Row({ name, pct, win }: { name: string; pct: number; win: boolean }) {
-  return (
-    <div className={`flex items-center justify-between gap-2 px-2 py-1.5 ${win ? "bg-tomato-50" : ""}`}>
-      <span className="flex items-center gap-2 truncate">
-        <Flag team={name} size={18} />
-        <span className={`truncate text-sm ${win ? "font-bold text-ink" : "text-mute"}`}>
-          {name}
-        </span>
-      </span>
-      <span className="shrink-0 text-xs font-bold text-tomato">{pct}%</span>
-    </div>
   );
 }
