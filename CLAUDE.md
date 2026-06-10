@@ -50,9 +50,10 @@ Six tabs + detail page, all reading Postgres directly from Server Components (`s
 1. **Home**: upcoming matches, locked probabilities, Brier headline
 2. **Groups**: 12 groups, flags, per-match forecasts
 3. **Bracket**: real knockout tree (slot labels fill in as groups resolve), centered with connector lines
-4. **Predicted**: champion banner, title-odds bars, champion-odds-over-time table (one column per day), reach-round table, predicted group standings, predicted bracket
-5. **Calibration**: reliability diagram, Brier + outcome hit rate + exact-score rate
-6. **Methodology**: plain-language then technical (the recruiter page)
+4. **Predicted**: champion banner, title-odds bars, champion-odds-over-time table (every team with a title chance, one column per day, first column = pre-tournament), prediction-vs-reality report card (initial sim's top-N per round vs actual, success %), reach-round table, predicted group standings, predicted bracket
+5. **Results**: log of every played match, locked prediction next to the actual score, pick hit/miss, per-match Brier
+6. **Calibration**: reliability diagram, Brier + outcome hit rate + exact-score rate
+7. **Methodology**: plain-language then technical (the recruiter page)
 - `/match/[id]`: probabilities, predicted scoreline, odds-drift chart
 - Bracket layout: matches MUST be ordered by bracket-tree position (`ORDER` in `lib/bracket2026.ts`), not match number; the 2026 wiring pairs non-adjacent numbers.
 - Colors (style tile): Tomato #ff4b01 = home team, Sun #faa000 = away team, Ink #3e4749 = draw/neutral, Mute #879499. Flags via flagcdn.com (`lib/flags.ts`); flag emoji do not render on Windows.

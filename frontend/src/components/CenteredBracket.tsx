@@ -55,7 +55,7 @@ function MatchBox({ m }: { m: BracketMatch }) {
   const awayWin = !!m.winner && m.winner === m.away;
   return (
     <div
-      className="overflow-hidden rounded-md border border-mute/30 bg-paper shadow-sm"
+      className="relative z-10 overflow-hidden rounded-md border border-mute/30 bg-paper shadow-sm"
       style={{ width: BOX_W }}
     >
       <Row name={m.home} pct={m.home_pct} win={homeWin} />
@@ -161,8 +161,9 @@ export function CenteredBracket({ rounds }: { rounds: Round[] }) {
         {/* centre: the final */}
         <div className="flex flex-col justify-center px-2" style={{ width: COL_W }}>
           {finalMatch && (
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-mute">
+            <div className="relative flex flex-col items-center">
+              {/* absolute label so the box stays on the connector centerline */}
+              <span className="absolute -top-5 text-[10px] font-bold uppercase tracking-wide text-mute">
                 Final
               </span>
               <MatchBox m={finalMatch} />

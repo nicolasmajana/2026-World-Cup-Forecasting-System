@@ -1,8 +1,13 @@
-import { getTournamentSim, getChampionHistory } from "@/lib/queries";
+import {
+  getTournamentSim,
+  getChampionHistory,
+  getTournamentComparison,
+} from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { GroupStandings } from "@/components/GroupStandings";
 import { CenteredBracket } from "@/components/CenteredBracket";
 import { ChampionHistory } from "@/components/ChampionHistory";
+import { TournamentComparison } from "@/components/TournamentComparison";
 import { formatDateTime } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +23,10 @@ function pct(v: number) {
 }
 
 export default async function PredictedPage() {
-  const [sim, history] = await Promise.all([
+  const [sim, history, comparison] = await Promise.all([
     getTournamentSim(),
-    getChampionHistory(10),
+    getChampionHistory(),
+    getTournamentComparison(),
   ]);
 
   if (!sim) {
@@ -96,11 +102,26 @@ export default async function PredictedPage() {
             Champion odds over time
           </h2>
           <p className="mb-4 text-sm text-mute">
-            The model re-simulates the tournament every day and conditions on
-            results as they come in, so these odds shift as the World Cup
-            unfolds.
+            Every team&apos;s title chance, re-simulated daily and conditioned
+            on results as they come in. The first column is the pre-tournament
+            prediction; the bold column is today.
           </p>
           <ChampionHistory data={history} />
+        </section>
+      )}
+
+      {/* Prediction vs reality */}
+      {comparison && (
+        <section className="mt-10">
+          <h2 className="mb-2 text-xl font-bold text-ink">
+            Prediction vs reality
+          </h2>
+          <p className="mb-4 text-sm text-mute">
+            The pre-tournament prediction, scored against the real bracket as
+            it resolves. At the end of the World Cup this is the final report
+            card.
+          </p>
+          <TournamentComparison data={comparison} />
         </section>
       )}
 

@@ -240,9 +240,15 @@ export type ChampionHistory = {
 };
 
 /** Champion probability per team over time: one column per day (the latest
- * simulation that day), so you can watch the odds move as results come in. */
-export async function getChampionHistory(topN = 10): Promise<ChampionHistory> {
-  const rows = await query<{ simulated_at: string; team_odds: TeamOdds[] }>(
+ * simulation that day), so you can watch the odds move as results come in.
+ * Covers every team that ever had a title chance; once the column count
+ * outgrows maxCols, the first day is kept and the rest are the most recent
+ * days, so the initial odds always stay visible for comparison. */
+export async function getChampionHistory(
+  topN = 48,
+  maxCols = 9,
+): Promise<ChampionHistory> {
+  let rows = await query<{ simulated_at: string; team_odds: TeamOdds[] }>(
     `SELECT DISTINCT ON (date_trunc('day', simulated_at AT TIME ZONE 'America/New_York'))
             simulated_at, team_odds
      FROM tournament_sim
@@ -250,9 +256,16 @@ export async function getChampionHistory(topN = 10): Promise<ChampionHistory> {
               simulated_at DESC`,
   );
   if (rows.length === 0) return { columns: [], teams: [] };
+  if (rows.length > maxCols) {
+    rows = [rows[0], ...rows.slice(-(maxCols - 1))];
+  }
 
   const latest = rows[rows.length - 1];
   const top = [...latest.team_odds]
+    .filter((t) => rows.some((r) => {
+      const e = r.team_odds.find((o) => o.code === t.code);
+      return e != null && e.champion > 0;
+    }))
     .sort((a, b) => b.champion - a.champion)
     .slice(0, topN);
 
@@ -281,4 +294,131 @@ export async function getLatestModelRun() {
      FROM model_runs ORDER BY run_at DESC LIMIT 1`,
   );
   return rows[0] ?? null;
+}
+
+// ── Prediction vs reality ─────────────────────────────────────────
+
+export type RoundComparison = {
+  key: string;
+  label: string;
+  slots: number;       // how many teams the round holds
+  resolved: number;    // how many of those slots are actually known
+  hits: number;        // actual teams the initial sim had in its top-`slots`
+  predicted: string[]; // initial top-`slots` team names
+  actual: string[];    // actual team names (so far)
+};
+
+export type TournamentComparison = {
+  initial_at: string;
+  rounds: RoundComparison[];
+  predicted_champion: string | null;
+  actual_champion: string | null;
+};
+
+const ROUND_DEFS = [
+  { key: "r16", label: "Reach knockouts", slots: 32, stage: "r32" },
+  { key: "quarterfinal", label: "Reach quarter-finals", slots: 8, stage: "qf" },
+  { key: "semifinal", label: "Reach semi-finals", slots: 4, stage: "sf" },
+  { key: "final", label: "Reach the final", slots: 2, stage: "f" },
+] as const;
+
+/** Compare the initial (pre-tournament) simulation against what actually
+ * happened: for each knockout round, the initial top-N teams by reach
+ * probability vs the teams that really got there. Builds up live as slots
+ * resolve; complete after the final. */
+export async function getTournamentComparison(): Promise<TournamentComparison | null> {
+  // The "initial" prediction: the last simulation before the opening kickoff.
+  const sims = await query<{ simulated_at: string; team_odds: TeamOdds[] }>(
+    `SELECT simulated_at, team_odds FROM tournament_sim
+     WHERE simulated_at < (SELECT min(kickoff_utc) FROM fixtures)
+     ORDER BY simulated_at DESC LIMIT 1`,
+  );
+  if (sims.length === 0) return null;
+  const initial = sims[0];
+
+  // Actual participants per knockout stage (filled in by the resolver), and
+  // the champion once the final has a result.
+  const stageRows = await query<{ stage: string; name: string; code: string }>(
+    `SELECT f.stage, t.name, t.fifa_code AS code
+     FROM fixtures f
+     JOIN teams t ON t.id IN (f.home_team_id, f.away_team_id)
+     WHERE f.stage <> 'group'
+     GROUP BY f.stage, t.name, t.fifa_code`,
+  );
+  const champRows = await query<{ name: string }>(
+    `SELECT CASE WHEN f.home_goals > f.away_goals THEN ht.name
+                 WHEN f.away_goals > f.home_goals THEN at.name END AS name
+     FROM fixtures f
+     JOIN teams ht ON ht.id = f.home_team_id
+     JOIN teams at ON at.id = f.away_team_id
+     WHERE f.match_num = 103 AND f.home_goals IS NOT NULL`,
+  );
+
+  const byStage = new Map<string, { name: string; code: string }[]>();
+  for (const r of stageRows) {
+    if (!byStage.has(r.stage)) byStage.set(r.stage, []);
+    byStage.get(r.stage)!.push(r);
+  }
+
+  const rounds: RoundComparison[] = ROUND_DEFS.map((d) => {
+    const predicted = [...initial.team_odds]
+      .sort((a, b) => (b[d.key] as number) - (a[d.key] as number))
+      .slice(0, d.slots);
+    const predictedCodes = new Set(predicted.map((t) => t.code));
+    const actual = byStage.get(d.stage) ?? [];
+    return {
+      key: d.key,
+      label: d.label,
+      slots: d.slots,
+      resolved: actual.length,
+      hits: actual.filter((t) => predictedCodes.has(t.code)).length,
+      predicted: predicted.map((t) => t.name),
+      actual: actual.map((t) => t.name),
+    };
+  });
+
+  const topChamp = [...initial.team_odds].sort((a, b) => b.champion - a.champion)[0];
+  return {
+    initial_at: initial.simulated_at,
+    rounds,
+    predicted_champion: topChamp?.name ?? null,
+    actual_champion: champRows[0]?.name ?? null,
+  };
+}
+
+// ── Results log ───────────────────────────────────────────────────
+
+export type ResultLogRow = {
+  fixture_id: number;
+  kickoff_utc: string;
+  stage: string;
+  group_name: string | null;
+  home_team: string;
+  away_team: string;
+  home_goals: number;
+  away_goals: number;
+  p_home_win: string | null;
+  p_draw: string | null;
+  p_away_win: string | null;
+  xg_home: string | null;
+  xg_away: string | null;
+  locked_at: string | null;
+  brier_score: string | null;
+};
+
+/** Every played match with its locked pre-kickoff prediction, newest first. */
+export async function getResultsLog(): Promise<ResultLogRow[]> {
+  return query<ResultLogRow>(
+    `SELECT f.id AS fixture_id, f.kickoff_utc, f.stage, f.group_name,
+            ht.name AS home_team, at.name AS away_team,
+            f.home_goals, f.away_goals,
+            p.p_home_win, p.p_draw, p.p_away_win, p.xg_home, p.xg_away,
+            p.locked_at, p.brier_score
+     FROM fixtures f
+     JOIN teams ht ON ht.id = f.home_team_id
+     JOIN teams at ON at.id = f.away_team_id
+     LEFT JOIN predictions p ON p.fixture_id = f.id
+     WHERE f.home_goals IS NOT NULL
+     ORDER BY f.kickoff_utc DESC`,
+  );
 }
