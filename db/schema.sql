@@ -53,7 +53,8 @@ CREATE INDEX idx_historical_away ON historical_matches(away_team_id, match_date)
 -- ─────────────────────────────────────────────
 CREATE TABLE fixtures (
     id              SERIAL PRIMARY KEY,
-    match_id        TEXT         NOT NULL UNIQUE,  -- FIFA official match id or slug
+    match_id        TEXT         NOT NULL UNIQUE,  -- date-team slug (display/debug)
+    match_num       INTEGER      UNIQUE,           -- stable openfootball match number
     kickoff_utc     TIMESTAMPTZ  NOT NULL,
     home_team_id    INTEGER      REFERENCES teams(id),   -- NULL for TBD group-stage qualifiers
     away_team_id    INTEGER      REFERENCES teams(id),

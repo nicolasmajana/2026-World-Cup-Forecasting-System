@@ -30,6 +30,7 @@ from data.features import (  # noqa: E402
     latest_strength, DEFAULT_ELO,
 )
 from data.load_fixtures import FIXTURES_URL, stage_for  # noqa: E402
+from data.bracket_wiring import WIRES, THIRD_SLOTS  # noqa: E402
 from model.poisson_model import PoissonGoalModel, FEATURE_COLS  # noqa: E402
 
 N_SIMS = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
@@ -73,26 +74,40 @@ def build_xg_matrix(model, comp, teams):
 
 
 def parse_bracket():
-    """Return (ko_matches, third_slots).
-    ko_matches: list of dicts {num, round, ref1, ref2} in play order.
-    third_slots: list of (num_side_key, allowed_group_set) for 3rd-place slots."""
-    data = requests.get(FIXTURES_URL, timeout=30).json()
-    ko, third_slots = [], []
-    for m in data["matches"]:
-        if "Matchday" in m.get("round", ""):
-            continue
-        num = m.get("num")
-        rnd = m.get("round", "")
-        if num is None:  # Final / third place
-            num = 103 if rnd == "Final" else 104
-        ref1, ref2 = m.get("team1"), m.get("team2")
-        for side, ref in (("1", ref1), ("2", ref2)):
-            if isinstance(ref, str) and ref.startswith("3") and "/" in ref:
-                allowed = set(ref[1:].split("/"))
-                third_slots.append((f"{num}:{side}", allowed))
-        ko.append({"num": num, "round": stage_for(rnd), "ref1": ref1, "ref2": ref2})
-    ko.sort(key=lambda x: x["num"])
-    return ko, third_slots
+    """Return (ko_matches, third_slots) from the canonical hardcoded wiring.
+
+    Deliberately NOT read from the feed: openfootball rewrites slot refs into
+    team names as the bracket resolves, which would destroy the structure."""
+    ko = sorted(WIRES, key=lambda x: x["num"])
+    return ko, THIRD_SLOTS
+
+
+def load_actual_ko_winners(conn) -> dict[int, str]:
+    """Actual knockout winners by match number, from recorded results.
+
+    Only decisive full-time scores determine a winner here; a knockout match
+    that went to a shootout (draw at FT) stays unresolved and the simulation
+    keeps sampling it. Once group play is fully real, the simulated placements
+    equal the actual bracket, so these winners always apply to the right pair."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT f.match_num, f.home_goals, f.away_goals,
+               ht.fifa_code, at.fifa_code
+        FROM fixtures f
+        JOIN teams ht ON ht.id = f.home_team_id
+        JOIN teams at ON at.id = f.away_team_id
+        WHERE f.stage <> 'group' AND f.match_num IS NOT NULL
+          AND f.home_goals IS NOT NULL
+        """
+    )
+    winners = {}
+    for num, hg, ag, hc, ac in cur.fetchall():
+        if hg > ag:
+            winners[num] = hc
+        elif ag > hg:
+            winners[num] = ac
+    return winners
 
 
 def assign_thirds(third_teams, third_slots):
@@ -125,7 +140,8 @@ def sample_score(xg, rng, h, a):
     return rng.poisson(xg[(h, a)]), rng.poisson(xg[(a, h)])
 
 
-def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally):
+def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
+                  ko_winners):
     placements = {}  # '1A', '2B' -> code
     thirds = []      # (code, group_letter, pts, gd, gf)
 
@@ -179,14 +195,19 @@ def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally):
         if num in ROUND_OF:
             tally[ROUND_OF[num]][t1] += 1
             tally[ROUND_OF[num]][t2] += 1
-        gh, ga = sample_score(xg, rng, t1, t2)
-        if gh > ga:
-            w, loser = t1, t2
-        elif ga > gh:
-            w, loser = t2, t1
-        else:  # shootout, weighted by relative strength
-            p1 = xg[(t1, t2)] / (xg[(t1, t2)] + xg[(t2, t1)])
-            w, loser = (t1, t2) if rng.random() < p1 else (t2, t1)
+        actual_w = ko_winners.get(num)
+        if actual_w in (t1, t2):
+            # the match has actually been played: condition on reality
+            w, loser = (t1, t2) if actual_w == t1 else (t2, t1)
+        else:
+            gh, ga = sample_score(xg, rng, t1, t2)
+            if gh > ga:
+                w, loser = t1, t2
+            elif ga > gh:
+                w, loser = t2, t1
+            else:  # shootout, weighted by relative strength
+                p1 = xg[(t1, t2)] / (xg[(t1, t2)] + xg[(t2, t1)])
+                w, loser = (t1, t2) if rng.random() < p1 else (t2, t1)
         winners[num] = w
         winners[("L", num)] = loser
 
@@ -266,13 +287,17 @@ def main():
     print(f"{len(teams)} teams. Building expected-goals matrix…")
     xg = build_xg_matrix(model, comp, teams)
     ko, third_slots = parse_bracket()
+    ko_winners = load_actual_ko_winners(conn)
+    if ko_winners:
+        print(f"Conditioning on {len(ko_winners)} actual knockout result(s).")
 
     print(f"Simulating {N_SIMS:,} tournaments…")
     rng = np.random.default_rng()
     tally = {k: defaultdict(int) for k in
              ("group_winner", "r32", "r16", "qf", "sf", "final", "champion")}
     for _ in range(N_SIMS):
-        simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally)
+        simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
+                      ko_winners)
 
     # Per-team probabilities
     team_odds = []
@@ -288,7 +313,8 @@ def main():
         })
     team_odds.sort(key=lambda t: t["champion"], reverse=True)
 
-    bracket = build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names)
+    bracket = build_predicted_bracket(ko, xg, groups, group_matches, third_slots,
+                                      names, ko_winners)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -314,10 +340,13 @@ def analytic_wdl(xh, xa, maxg=10):
     return p_home, draw, float(1 - p_home - draw)
 
 
-def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
+def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names,
+                            ko_winners=None):
     """Single most-likely bracket from ONE consistent set of standings (expected
     points per group), so a team can never appear in two matches of the same
-    round. Then advance the favorite (higher expected goals)."""
+    round. Then advance the favorite (higher expected goals), except where the
+    match has actually been played, in which case the real winner advances."""
+    ko_winners = ko_winners or {}
     placements = {}   # '1A', '2B' -> code
     thirds = []       # (code, group_letter, pts, gd)
     standings = {}    # group -> {ranked, st}
@@ -402,7 +431,8 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names):
         b = resolve(m["ref2"], winners, num, "2")
         if a is None or b is None:
             continue
-        w = fav(a, b)
+        actual_w = ko_winners.get(num)
+        w = actual_w if actual_w in (a, b) else fav(a, b)
         total = xg[(a, b)] + xg[(b, a)]
         rounds[rnd].append({
             "num": num, "home": names.get(a, a), "away": names.get(b, b),

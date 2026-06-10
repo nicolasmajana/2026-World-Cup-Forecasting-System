@@ -21,6 +21,7 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection  # noqa: E402
+from data.bracket_wiring import feed_num  # noqa: E402
 
 RESULTS_URL = (
     "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json"
@@ -40,23 +41,46 @@ def main():
             if not ft or len(ft) != 2:
                 continue  # not played yet
 
-            home = match.get("team1")
-            away = match.get("team2")
-            home_name = home.get("name") if isinstance(home, dict) else home
-            away_name = away.get("name") if isinstance(away, dict) else away
-            # same slug load_fixtures.py built
-            slug = f"{match['date']}-{home_name or 'TBD'}-{away_name or 'TBD'}"
-
-            cur.execute(
-                """
-                UPDATE fixtures
-                SET home_goals = %s, away_goals = %s,
-                    result_source = 'openfootball', result_at = now()
-                WHERE match_id = %s AND home_goals IS NULL
-                """,
-                (int(ft[0]), int(ft[1]), slug),
-            )
-            updated += cur.rowcount
+            # Prefer the stable numeric id; slugs embed team labels that
+            # openfootball rewrites as the bracket resolves.
+            num = feed_num(match)
+            if num is not None:
+                cur.execute(
+                    """
+                    UPDATE fixtures
+                    SET home_goals = %s, away_goals = %s,
+                        result_source = 'openfootball', result_at = now()
+                    WHERE match_num = %s AND home_goals IS NULL
+                    """,
+                    (int(ft[0]), int(ft[1]), num),
+                )
+                updated += cur.rowcount
+            else:
+                home = match.get("team1")
+                away = match.get("team2")
+                home_name = home.get("name") if isinstance(home, dict) else home
+                away_name = away.get("name") if isinstance(away, dict) else away
+                slug = f"{match['date']}-{home_name or 'TBD'}-{away_name or 'TBD'}"
+                cur.execute(
+                    """
+                    UPDATE fixtures
+                    SET home_goals = %s, away_goals = %s,
+                        result_source = 'openfootball', result_at = now()
+                    WHERE match_id = %s AND home_goals IS NULL
+                    """,
+                    (int(ft[0]), int(ft[1]), slug),
+                )
+                updated += cur.rowcount
+                if cur.rowcount == 0:
+                    # Distinguish "already recorded" (fine) from "no such slug"
+                    # (the feed renamed a team and the result can't land).
+                    cur.execute(
+                        "SELECT 1 FROM fixtures WHERE match_id = %s", (slug,)
+                    )
+                    if cur.fetchone() is None:
+                        print(f"WARNING: played match has no matching fixture "
+                              f"slug {slug!r}. A team name in the feed changed; "
+                              f"fix the fixture or add an alias.")
     conn.commit()
     conn.close()
     print(f"Recorded {updated} new result(s).")

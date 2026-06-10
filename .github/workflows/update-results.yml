@@ -21,6 +21,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r pipeline/requirements.txt
 
+      - name: Resolve knockout slots from the bracket
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/jobs/resolve_knockout.py
+
       - name: Fetch finished match results
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

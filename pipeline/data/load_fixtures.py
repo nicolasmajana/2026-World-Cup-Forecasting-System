@@ -22,6 +22,7 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.loader import get_connection  # noqa: E402
+from data.bracket_wiring import feed_num  # noqa: E402
 
 FIXTURES_URL = (
     "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json"
@@ -112,17 +113,19 @@ def main():
             venue = ground.get("name") if isinstance(ground, dict) else ground
 
             match_slug = f"{match['date']}-{home_name or 'TBD'}-{away_name or 'TBD'}"
+            num = feed_num(match)
 
             cur.execute(
                 """
                 INSERT INTO fixtures
-                    (match_id, kickoff_utc, home_team_id, away_team_id,
+                    (match_id, match_num, kickoff_utc, home_team_id, away_team_id,
                      venue, stage, group_name)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (match_id) DO NOTHING
                 """,
                 (
                     match_slug,
+                    num,
                     kickoff,
                     team_id_by_name(cur, home_name),
                     team_id_by_name(cur, away_name),
