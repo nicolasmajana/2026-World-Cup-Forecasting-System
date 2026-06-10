@@ -87,8 +87,8 @@ export default async function MatchPage({
       {h != null ? (
         <div className="mt-6 grid grid-cols-3 gap-3 text-center">
           <Prob label={`${home} win`} value={h} color="text-tomato" />
-          <Prob label="Draw" value={d!} color="text-sun" />
-          <Prob label={`${away} win`} value={a!} color="text-ink" />
+          <Prob label="Draw" value={d!} color="text-ink" />
+          <Prob label={`${away} win`} value={a!} color="text-sun" />
         </div>
       ) : (
         <p className="mt-6 text-mute">No locked prediction for this match yet.</p>

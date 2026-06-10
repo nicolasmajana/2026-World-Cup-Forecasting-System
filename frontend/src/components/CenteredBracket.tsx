@@ -1,5 +1,6 @@
 import { Flag } from "./Flag";
 import { flagUrl } from "@/lib/flags";
+import { ORDER } from "@/lib/bracket2026";
 
 const BOX_W = 150;
 const STUB = 14;
@@ -21,7 +22,11 @@ export type BracketMatch = {
 type Round = { key: string; label: string; matches: BracketMatch[] };
 
 function half(matches: BracketMatch[], side: "L" | "R") {
-  return matches.filter((m) => m.half === side).sort((a, b) => a.num - b.num);
+  // Order by bracket-tree position, NOT match number, so feeders line up with
+  // their parent and connector lines connect the right matches.
+  return matches
+    .filter((m) => m.half === side)
+    .sort((a, b) => (ORDER[a.num] ?? a.num) - (ORDER[b.num] ?? b.num));
 }
 
 function Row({ name, pct, win }: { name: string; pct?: number | null; win: boolean }) {

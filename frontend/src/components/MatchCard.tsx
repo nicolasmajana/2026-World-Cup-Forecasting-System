@@ -15,8 +15,8 @@ function ProbBar({ h, d, a }: { h: number; d: number; a: number }) {
   return (
     <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-mute-100">
       <div className="bg-tomato" style={{ width: `${h}%` }} />
-      <div className="bg-sun" style={{ width: `${d}%` }} />
-      <div className="bg-ink" style={{ width: `${a}%` }} />
+      <div className="bg-ink" style={{ width: `${d}%` }} />
+      <div className="bg-sun" style={{ width: `${a}%` }} />
     </div>
   );
 }
@@ -85,8 +85,8 @@ export function MatchCard({ m }: { m: MatchPrediction }) {
 
       <div className="mt-2 flex justify-between text-sm font-bold">
         <span className="text-tomato">{h}%</span>
-        <span className="text-sun">{d}% draw</span>
-        <span className="text-ink">{a}%</span>
+        <span className="text-ink">{d}% draw</span>
+        <span className="text-sun">{a}%</span>
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-mute">

@@ -8,8 +8,8 @@ type Series = { key: "p_home_win" | "p_draw" | "p_away_win"; color: string; labe
 
 const SERIES: Series[] = [
   { key: "p_home_win", color: "var(--color-tomato)", label: "Home win" },
-  { key: "p_draw", color: "var(--color-sun)", label: "Draw" },
-  { key: "p_away_win", color: "var(--color-ink)", label: "Away win" },
+  { key: "p_draw", color: "var(--color-ink)", label: "Draw" },
+  { key: "p_away_win", color: "var(--color-sun)", label: "Away win" },
 ];
 
 export function OddsChart({

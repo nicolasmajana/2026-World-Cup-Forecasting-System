@@ -40,9 +40,14 @@ const WIRES: { num: number; round: string; ref1: string; ref2: string }[] = [
 ];
 
 const parent: Record<number, number> = {};
+const children: Record<number, number[]> = {};
 for (const w of WIRES)
   for (const r of [w.ref1, w.ref2])
-    if (r.startsWith("W")) parent[Number(r.slice(1))] = w.num;
+    if (r.startsWith("W")) {
+      const c = Number(r.slice(1));
+      parent[c] = w.num;
+      (children[w.num] ??= []).push(c);
+    }
 
 function half(num: number): "L" | "R" | "C" {
   if (num === 101) return "L";
@@ -51,6 +56,31 @@ function half(num: number): "L" | "R" | "C" {
   const p = parent[num];
   return p ? half(p) : "C";
 }
+
+// Vertical layout order: in-order traversal of the bracket tree assigns each
+// Round-of-32 match (a leaf) a slot top-to-bottom; every later match sits at
+// the mid-point of its two feeders. Ordering rounds by this (NOT by match
+// number) is what makes the tree line up: the wiring pairs non-adjacent
+// numbers (R16 #89 = winners of #74 and #77).
+const leafIndex: Record<number, number> = {};
+let _li = 0;
+function assignLeaves(num: number) {
+  const ch = children[num];
+  if (!ch) {
+    leafIndex[num] = _li++;
+    return;
+  }
+  ch.forEach(assignLeaves);
+}
+assignLeaves(103);
+
+export const ORDER: Record<number, number> = {};
+function pos(num: number): number {
+  const ch = children[num];
+  if (!ch) return leafIndex[num];
+  return ch.reduce((s, c) => s + pos(c), 0) / ch.length;
+}
+for (const w of WIRES) ORDER[w.num] = pos(w.num);
 
 function label(ref: string): string {
   if (/^1[A-L]$/.test(ref)) return `Winner ${ref[1]}`;
