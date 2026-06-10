@@ -20,21 +20,25 @@ The headline metric is the **Brier score**, not accuracy. Accuracy is a vanity n
    - Rolling attacking strength (last 10 matches)
    - Rolling defensive strength (last 10 matches)
    - Opponent's defensive strength
-   - FIFA Elo rating
+   - A time-varying Elo rating computed from the full match history itself (every team, margin-of-victory multiplier), which bakes in strength of schedule
+   - Elo difference vs the opponent
    - Home / away / neutral venue
+
+   Training samples are weighted by competition: a World Cup match counts more than a qualifier, which counts more than a friendly.
 
 2. **Monte Carlo simulation** (10,000 trials) samples Poisson goals for both teams and counts win/draw/loss frequencies. For validation, the same probabilities are computed analytically (exact, no sampling noise).
 
+3. **Tournament simulation**: the whole World Cup (groups, best-third-place routing, full knockout wiring) is simulated 5,000 times daily, conditioned on results already played, producing each team's odds of winning its group, reaching each round, and lifting the trophy.
+
 Trained on internationals before 2024 and validated on 2024 to 2025 as a true hold-out:
 
-| Metric | Value |
-|---|---|
-| Brier score (hold-out) | 0.1925 |
-| Baseline (predict base rates) | 0.2121 |
-| Improvement over baseline | +9.2% |
-| Training matches | 49,318 internationals (1872 to 2026) |
+| Metric | v1 (form only) | v2 (current) |
+|---|---|---|
+| Brier score (hold-out) | 0.1925 | **0.1715** |
+| Baseline (predict base rates) | 0.2121 | 0.2121 |
+| Improvement over baseline | +9.2% | **+19.1%** |
 
-Parked for later: bivariate Poisson (correlated scoring), gradient boosting, days of rest, head-to-head, and confederation features.
+Training set: 49,318 internationals (1872 to 2026). Parked for later: bivariate Poisson (correlated scoring), gradient boosting, days of rest, head-to-head.
 
 ### Two kinds of success rate
 
@@ -52,7 +56,8 @@ The `predictions` table has a database-level trigger that rejects any update or 
 
 - **Home**: upcoming matches with locked probabilities and the current Brier score
 - **Groups**: all 12 groups with flags and per-match forecasts
-- **Bracket**: the knockout path, filling in as the tournament resolves
+- **Bracket**: the real knockout tree (centered, line-connected), slots filling in as the group stage resolves
+- **Predicted**: title odds for every team, champion odds tracked day by day, predicted group standings, and the most likely bracket from 5,000 daily tournament simulations
 - **Match detail**: probabilities, predicted scoreline, and a chart of how the odds moved over time
 - **Calibration**: reliability diagram and success-rate breakdown
 - **Methodology**: the model explained plainly, then in technical depth
@@ -93,7 +98,7 @@ The canonical join key across sources is the FIFA 3-letter code; the `teams` tab
 
 Two GitHub Actions workflows keep the system running on its own:
 
-- **Lock Predictions** (daily, 06:00 UTC): locks forecasts for matches in the next 48 hours and snapshots the odds for the drift charts.
+- **Lock Predictions** (daily, 06:00 UTC): locks forecasts for matches in the next 48 hours, snapshots the odds for the drift charts, and re-simulates the full tournament (5,000 runs, conditioned on results so far).
 - **Update Results** (every 3 hours): fetches finished scores from openfootball and computes the Brier score for each scored prediction.
 
 ---
