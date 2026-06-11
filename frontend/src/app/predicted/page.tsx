@@ -6,7 +6,7 @@ import {
 import { Flag } from "@/components/Flag";
 import { GroupStandings } from "@/components/GroupStandings";
 import { CenteredBracket } from "@/components/CenteredBracket";
-import { ChampionHistory } from "@/components/ChampionHistory";
+import { ChampionChart } from "@/components/ChampionChart";
 import { TournamentComparison } from "@/components/TournamentComparison";
 import { formatDateTime } from "@/lib/datetime";
 
@@ -25,7 +25,8 @@ function pct(v: number) {
 export default async function PredictedPage() {
   const [sim, history, comparison] = await Promise.all([
     getTournamentSim(),
-    getChampionHistory(),
+    // every day of the tournament fits comfortably on the chart's x axis
+    getChampionHistory(48, 60),
     getTournamentComparison(),
   ]);
 
@@ -40,8 +41,13 @@ export default async function PredictedPage() {
     );
   }
 
-  const champion = sim.predicted_bracket.champion;
+  // The headline champion is the Monte Carlo favorite (highest title odds
+  // across all simulated paths). This can differ from the bracket's Final
+  // winner, which is a single head-to-head matchup; the bracket section
+  // explains that nuance.
   const top = sim.team_odds.slice(0, 12);
+  const champion = top[0]?.name ?? null;
+  const championPct = top[0] ? Math.round(top[0].champion * 100) : null;
   const maxChamp = Math.max(...top.map((t) => t.champion), 0.01);
 
   return (
@@ -60,7 +66,14 @@ export default async function PredictedPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-mute">
               Most likely champion
             </p>
-            <p className="text-2xl font-extrabold text-ink">{champion}</p>
+            <p className="text-2xl font-extrabold text-ink">
+              {champion}
+              {championPct != null && (
+                <span className="ml-2 text-base font-bold text-tomato">
+                  {championPct}%
+                </span>
+              )}
+            </p>
           </div>
         </div>
       )}
@@ -102,11 +115,13 @@ export default async function PredictedPage() {
             Champion odds over time
           </h2>
           <p className="mb-4 text-sm text-mute">
-            Every team&apos;s title chance, re-simulated daily and conditioned
-            on results as they come in. The first column is the pre-tournament
-            prediction; the bold column is today.
+            The top contenders&apos; title chances, re-simulated every morning
+            and conditioned on results as they come in. The leftmost points are
+            the pre-tournament odds.
           </p>
-          <ChampionHistory data={history} />
+          <div className="rounded-2xl border border-mute/30 bg-paper p-6 shadow-sm">
+            <ChampionChart data={history} />
+          </div>
         </section>
       )}
 
@@ -180,9 +195,17 @@ export default async function PredictedPage() {
         </h2>
         <p className="mb-4 text-sm text-mute">
           The favorite advances at each step. Percentages are that team&apos;s
-          win chance in the matchup.
+          win chance in that specific matchup.
         </p>
         <CenteredBracket rounds={sim.predicted_bracket.rounds} />
+        <p className="mt-2 max-w-2xl text-xs text-mute">
+          The bracket winner can differ from the most likely champion above:
+          the bracket follows one specific path of head-to-head favorites,
+          while the champion odds average over every path in{" "}
+          {sim.n_sims.toLocaleString()} simulations. A team with a slightly
+          harder projected final but easier road can have the better overall
+          title odds.
+        </p>
       </section>
 
       <p className="mt-8 text-xs text-mute">

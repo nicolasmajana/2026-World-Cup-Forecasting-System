@@ -35,7 +35,7 @@ export function TournamentComparison({ data }: { data: Data }) {
             before the opening match.
           </p>
           <p className="mt-1">
-            Predicted champion:{" "}
+            Initial predicted champion (highest title odds):{" "}
             <span className="inline-flex items-center gap-1 font-bold text-ink">
               <Flag team={data.predicted_champion ?? ""} size={16} />
               {data.predicted_champion ?? "-"}
