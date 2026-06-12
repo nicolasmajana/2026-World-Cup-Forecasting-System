@@ -1,4 +1,9 @@
-import { getResultsLog, getCalibrationSummary } from "@/lib/queries";
+import {
+  getResultsLog,
+  getCalibrationSummary,
+  getPendingResults,
+  type PendingMatch,
+} from "@/lib/queries";
 import { Flag } from "@/components/Flag";
 import { predictedScore } from "@/lib/flags";
 import { formatKickoff } from "@/lib/datetime";
@@ -29,9 +34,10 @@ function pick(h: string | null, d: string | null, a: string | null): "H" | "D" |
 }
 
 export default async function ResultsPage() {
-  const [rows, summary] = await Promise.all([
+  const [rows, summary, pending] = await Promise.all([
     getResultsLog(),
     getCalibrationSummary(),
+    getPendingResults(),
   ]);
 
   const withPick = rows.filter((r) => r.p_home_win != null);
@@ -50,12 +56,31 @@ export default async function ResultsPage() {
         to what actually happened. Nothing here can be edited after the fact.
       </p>
 
-      {rows.length === 0 ? (
+      {pending.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-ink">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sun" />
+            Awaiting result
+          </h2>
+          <p className="mb-3 text-sm text-mute">
+            These matches have kicked off. Scores come from a free,
+            community-maintained feed that updates with a delay, so the result
+            and Brier score will appear automatically once it publishes.
+          </p>
+          <div className="grid gap-2">
+            {pending.map((m) => (
+              <PendingRow key={m.fixture_id} m={m} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {rows.length === 0 && pending.length === 0 ? (
         <p className="mt-8 text-mute">
           No matches played yet. The log starts filling in with the opening
           match.
         </p>
-      ) : (
+      ) : rows.length === 0 ? null : (
         <>
           <section className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Stat
@@ -140,6 +165,47 @@ export default async function ResultsPage() {
         </>
       )}
     </main>
+  );
+}
+
+function PendingRow({ m }: { m: PendingMatch }) {
+  const mins = Math.round(m.minutes_since_kickoff);
+  // A match runs ~2 hours; before that it is likely still being played.
+  const inProgress = mins < 120;
+  const status = inProgress ? "In progress" : "Processing result";
+  const waited =
+    mins < 120 ? null : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
+  const ps = predictedScore(m.xg_home, m.xg_away);
+
+  return (
+    <article className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sun/50 bg-sun-50/60 p-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 font-semibold text-ink">
+          <Flag team={m.home_team} size={18} />
+          <span className="truncate">{m.home_team}</span>
+          <span className="text-mute">vs</span>
+          <span className="truncate">{m.away_team}</span>
+          <Flag team={m.away_team} size={18} />
+        </div>
+        <div className="text-[11px] text-mute">
+          {m.stage === "group" ? m.group_name : m.stage.toUpperCase()}
+          {" · "}
+          {formatKickoff(m.kickoff_utc)}
+        </div>
+      </div>
+      <div className="flex items-center gap-4 text-sm">
+        {ps && (
+          <span className="text-mute">
+            predicted <span className="font-bold text-ink">{ps}</span>
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-sun/20 px-2.5 py-1 text-xs font-semibold text-ink">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-sun" />
+          {status}
+          {waited && <span className="text-mute">· {waited} ago</span>}
+        </span>
+      </div>
+    </article>
   );
 }
 

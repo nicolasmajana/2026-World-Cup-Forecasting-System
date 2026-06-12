@@ -406,6 +406,38 @@ export type ResultLogRow = {
   brier_score: string | null;
 };
 
+export type PendingMatch = {
+  fixture_id: number;
+  kickoff_utc: string;
+  stage: string;
+  group_name: string | null;
+  home_team: string;
+  away_team: string;
+  p_home_win: string | null;
+  p_draw: string | null;
+  p_away_win: string | null;
+  xg_home: string | null;
+  xg_away: string | null;
+  minutes_since_kickoff: number;
+};
+
+/** Matches that have kicked off but have no recorded result yet (the openfootball
+ * feed publishes scores with a delay). Newest kickoff first. */
+export async function getPendingResults(): Promise<PendingMatch[]> {
+  return query<PendingMatch>(
+    `SELECT f.id AS fixture_id, f.kickoff_utc, f.stage, f.group_name,
+            ht.name AS home_team, at.name AS away_team,
+            p.p_home_win, p.p_draw, p.p_away_win, p.xg_home, p.xg_away,
+            EXTRACT(EPOCH FROM (now() - f.kickoff_utc)) / 60 AS minutes_since_kickoff
+     FROM fixtures f
+     JOIN teams ht ON ht.id = f.home_team_id
+     JOIN teams at ON at.id = f.away_team_id
+     LEFT JOIN predictions p ON p.fixture_id = f.id
+     WHERE f.home_goals IS NULL AND f.kickoff_utc < now()
+     ORDER BY f.kickoff_utc DESC`,
+  );
+}
+
 /** Every played match with its locked pre-kickoff prediction, newest first. */
 export async function getResultsLog(): Promise<ResultLogRow[]> {
   return query<ResultLogRow>(
