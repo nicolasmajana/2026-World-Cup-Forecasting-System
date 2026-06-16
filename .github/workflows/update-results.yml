@@ -31,6 +31,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python pipeline/jobs/fetch_results.py
 
+      - name: Promote finished results into training data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python pipeline/jobs/promote_results.py
+
       - name: Update Brier scores for finished matches
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

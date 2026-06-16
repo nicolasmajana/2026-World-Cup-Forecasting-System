@@ -36,7 +36,7 @@ Seven tables: `teams`, `historical_matches`, `fixtures`, `predictions`, `model_r
 ## Pipeline jobs (`pipeline/jobs/`)
 Two GitHub Actions workflows (secret: `DATABASE_URL`, session pooler):
 - **lock-predictions.yml** (daily 06:00 UTC): `lock_predictions.py` (lock fixtures in next 48h) → `snapshot_odds.py` (re-train, snapshot current odds for every upcoming fixture, idempotent per day) → `simulate_tournament.py 5000` (full-tournament Monte Carlo, conditioned on actual group results AND decisive knockout results; stores team odds + predicted bracket).
-- **update-results.yml** (every 3h): `resolve_knockout.py` (fill knockout team slots as the feed names them; keys on `fixtures.match_num`) → `fetch_results.py` (openfootball score.ft → fixtures, matched by match_num for knockouts, slug for groups, warns loudly on slug misses) → `update_results.py` (Brier per scored prediction).
+- **update-results.yml** (every 3h): `resolve_knockout.py` (fill knockout team slots as the feed names them; keys on `fixtures.match_num`) → `fetch_results.py` (openfootball score.ft → fixtures, matched by match_num for knockouts, slug for groups, warns loudly on slug misses) → `promote_results.py` (copy finished fixtures into `historical_matches` as 'World Cup' rows, weight 1.6, neutral venue; idempotent via the migration 006 partial unique index, so the daily re-train in snapshot/sim now sees WC form) → `update_results.py` (Brier per scored prediction).
 - `backfill_predictions.py` is the one-off that seeded the initial 72 predictions.
 - The knockout STRUCTURE is hardcoded in `pipeline/data/bracket_wiring.py` (and mirrored in `frontend/src/lib/bracket2026.ts`); never parse it from the live feed, which rewrites slot refs into team names as the bracket resolves. `fixtures.match_num` (73-102, Final=103, third place=104) is the stable key; group matches carry no number in the feed and keep slug matching.
 
@@ -68,7 +68,6 @@ Six tabs + detail page, all reading Postgres directly from Server Components (`s
 - Commit messages tell the story, written like a portfolio
 
 ## Known gaps / next steps
-- Results land in `fixtures` but do not yet feed `historical_matches`, so rolling form does not update from WC games during the tournament
 - A knockout match drawn at full time (decided on penalties) is not conditioned in the sim (winner not derivable from the FT score); it keeps being sampled
 - Once knockout teams resolve, predictions are locked by the next 06:00 UTC run; a matchup decided less than a day before kickoff still gets locked in time because all knockout kickoffs are afternoon/evening UTC
 
