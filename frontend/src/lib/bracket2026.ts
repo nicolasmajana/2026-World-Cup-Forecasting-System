@@ -99,22 +99,57 @@ const LABELS: Record<string, string> = {
   f: "Final",
 };
 
-/** Resolver: given a slot ref, return the actual team name if known. */
-export type SlotResolver = (ref: string) => string | null;
+/** A resolved knockout fixture: the real teams in each slot (null until the
+ * bracket resolves) and the score once it has been played. */
+export type SlotResult = {
+  match_num: number;
+  home_team: string | null;
+  away_team: string | null;
+  home_goals: number | null;
+  away_goals: number | null;
+};
 
-/** Build the bracket rounds. If `resolve` is given, slot refs that resolve to
- * a real team show the team; otherwise the slot label is shown. */
-export function bracketRounds(resolve?: SlotResolver) {
+/** Build the bracket rounds. Given the resolved knockout fixtures, each slot
+ * label ("Winner A", "Winner of 74") is replaced by the real team as soon as
+ * it is known, and the winner of a decided match is highlighted and pushed
+ * forward into the next round even before the upstream feed relabels it. */
+export function bracketRounds(slots?: SlotResult[]) {
+  const byNum: Record<number, SlotResult> = {};
+  for (const s of slots ?? []) byNum[s.match_num] = s;
+
+  // ref -> real team name, built as results come in. Group/runner-up/third
+  // refs come straight from the resolved fixture slots; W#/L# refs are derived
+  // from decided match results so later rounds fill in immediately.
+  const refTeam: Record<string, string> = {};
+  for (const w of WIRES) {
+    const s = byNum[w.num];
+    if (s?.home_team) refTeam[w.ref1] = s.home_team;
+    if (s?.away_team) refTeam[w.ref2] = s.away_team;
+  }
+
+  const winnerOf: Record<number, string | null> = {};
+  for (const w of WIRES) {
+    const s = byNum[w.num];
+    if (!s || s.home_goals == null || s.away_goals == null) continue;
+    if (s.home_goals === s.away_goals) continue; // shootout: winner not in score
+    const won = s.home_goals > s.away_goals ? s.home_team : s.away_team;
+    const lost = s.home_goals > s.away_goals ? s.away_team : s.home_team;
+    winnerOf[w.num] = won;
+    if (won) refTeam[`W${w.num}`] = won;
+    if (lost) refTeam[`L${w.num}`] = lost;
+  }
+
   const order = ["r32", "r16", "qf", "sf", "f"];
   const byRound: Record<string, BracketMatch[]> = {};
   for (const w of WIRES) {
-    const home = (resolve && resolve(w.ref1)) || label(w.ref1);
-    const away = (resolve && resolve(w.ref2)) || label(w.ref2);
+    const home = refTeam[w.ref1] ?? label(w.ref1);
+    const away = refTeam[w.ref2] ?? label(w.ref2);
     (byRound[w.round] ??= []).push({
       num: w.num,
       half: half(w.num),
       home,
       away,
+      winner: winnerOf[w.num] ?? null,
     });
   }
   return order

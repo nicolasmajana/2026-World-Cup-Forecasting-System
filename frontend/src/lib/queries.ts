@@ -95,6 +95,29 @@ export async function getKnockoutMatches(): Promise<FixtureRow[]> {
   );
 }
 
+export type KnockoutSlot = {
+  match_num: number;
+  home_team: string | null;
+  away_team: string | null;
+  home_goals: number | null;
+  away_goals: number | null;
+};
+
+/** Resolved teams and scores for each knockout fixture, keyed by the stable
+ * openfootball match number. Slots fill in as resolve_knockout.py writes real
+ * teams into `fixtures`; the bracket reads this to replace its slot labels. */
+export async function getKnockoutSlots(): Promise<KnockoutSlot[]> {
+  return query<KnockoutSlot>(
+    `SELECT f.match_num,
+            ht.name AS home_team, at.name AS away_team,
+            f.home_goals, f.away_goals
+     FROM fixtures f
+     LEFT JOIN teams ht ON ht.id = f.home_team_id
+     LEFT JOIN teams at ON at.id = f.away_team_id
+     WHERE f.stage <> 'group' AND f.match_num IS NOT NULL`,
+  );
+}
+
 export type OddsSnapshot = {
   captured_at: string;
   p_home_win: string;
