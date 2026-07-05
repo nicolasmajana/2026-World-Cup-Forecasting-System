@@ -65,6 +65,8 @@ CREATE TABLE fixtures (
     group_name      TEXT,                           -- 'A' … 'L', NULL for knockouts
     home_goals      SMALLINT,                       -- filled after match
     away_goals      SMALLINT,
+    home_pens       SMALLINT,                       -- shootout score, NULL unless FT was level
+    away_pens       SMALLINT,
     result_source   TEXT,                           -- where we pulled the result from
     result_at       TIMESTAMPTZ                     -- when we recorded the result
 );

@@ -85,14 +85,16 @@ def parse_bracket():
 def load_actual_ko_winners(conn) -> dict[int, str]:
     """Actual knockout winners by match number, from recorded results.
 
-    Only decisive full-time scores determine a winner here; a knockout match
-    that went to a shootout (draw at FT) stays unresolved and the simulation
-    keeps sampling it. Once group play is fully real, the simulated placements
-    equal the actual bracket, so these winners always apply to the right pair."""
+    A decisive full-time score determines a winner directly. A knockout match
+    level at FT is decided on penalties (fetch_results.py records that shootout
+    score as home_pens/away_pens); fall back to those when ft is a draw. Once
+    group play is fully real, the simulated placements equal the actual
+    bracket, so these winners always apply to the right pair."""
     cur = conn.cursor()
     cur.execute(
         """
         SELECT f.match_num, f.home_goals, f.away_goals,
+               f.home_pens, f.away_pens,
                ht.fifa_code, at.fifa_code
         FROM fixtures f
         JOIN teams ht ON ht.id = f.home_team_id
@@ -102,11 +104,13 @@ def load_actual_ko_winners(conn) -> dict[int, str]:
         """
     )
     winners = {}
-    for num, hg, ag, hc, ac in cur.fetchall():
+    for num, hg, ag, hp, ap, hc, ac in cur.fetchall():
         if hg > ag:
             winners[num] = hc
         elif ag > hg:
             winners[num] = ac
+        elif hp is not None and ap is not None:
+            winners[num] = hc if hp > ap else ac
     return winners
 
 
