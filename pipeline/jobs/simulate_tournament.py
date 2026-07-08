@@ -82,6 +82,32 @@ def parse_bracket():
     return ko, THIRD_SLOTS
 
 
+def load_real_slots(conn) -> dict[int, tuple[str, str]]:
+    """Ground-truth (home_code, away_code) for every knockout match whose
+    teams are already known, straight from resolve_knockout's work.
+
+    Eight of the sixteen R32 slots are filled by 'best third-place team from
+    groups X/Y/Z', an assignment openfootball (and FIFA) makes by a fixed
+    lookup table, not a free choice. assign_thirds() below is a generic
+    constraint solver: it finds *a* valid assignment satisfying each slot's
+    allowed-groups list, not necessarily *the* one actually used. Once a
+    match has been played, resolve_knockout has already copied the real
+    team names in from the feed, so for any match ref that points at an
+    already-decided match, prefer this ground truth over re-deriving a
+    team from our own (possibly different) third-place permutation."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT f.match_num, ht.fifa_code, at.fifa_code
+        FROM fixtures f
+        JOIN teams ht ON ht.id = f.home_team_id
+        JOIN teams at ON at.id = f.away_team_id
+        WHERE f.match_num >= 73 AND f.stage <> 'group'
+        """
+    )
+    return {num: (hc, ac) for num, hc, ac in cur.fetchall()}
+
+
 def load_actual_ko_winners(conn) -> dict[int, str]:
     """Actual knockout winners by match number, from recorded results.
 
@@ -145,7 +171,7 @@ def sample_score(xg, rng, h, a):
 
 
 def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
-                  ko_winners):
+                  ko_winners, real_slots):
     placements = {}  # '1A', '2B' -> code
     thirds = []      # (code, group_letter, pts, gd, gf)
 
@@ -188,12 +214,15 @@ def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
     winners = {}
     for m in ko:
         num, rnd = m["num"], m["round"]
-        t1 = resolve(m["ref1"], winners)
-        t2 = resolve(m["ref2"], winners)
-        if t1 is None:
-            t1 = slot_team.get(f"{num}:1")
-        if t2 is None:
-            t2 = slot_team.get(f"{num}:2")
+        if num in real_slots:
+            t1, t2 = real_slots[num]
+        else:
+            t1 = resolve(m["ref1"], winners)
+            t2 = resolve(m["ref2"], winners)
+            if t1 is None:
+                t1 = slot_team.get(f"{num}:1")
+            if t2 is None:
+                t2 = slot_team.get(f"{num}:2")
         if t1 is None or t2 is None:
             continue
         if num in ROUND_OF:
@@ -292,8 +321,11 @@ def main():
     xg = build_xg_matrix(model, comp, teams)
     ko, third_slots = parse_bracket()
     ko_winners = load_actual_ko_winners(conn)
+    real_slots = load_real_slots(conn)
     if ko_winners:
         print(f"Conditioning on {len(ko_winners)} actual knockout result(s).")
+    if real_slots:
+        print(f"Using real team identities for {len(real_slots)} resolved knockout slot(s).")
 
     print(f"Simulating {N_SIMS:,} tournaments…")
     rng = np.random.default_rng()
@@ -301,7 +333,7 @@ def main():
              ("group_winner", "r32", "r16", "qf", "sf", "final", "champion")}
     for _ in range(N_SIMS):
         simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
-                      ko_winners)
+                      ko_winners, real_slots)
 
     # Per-team probabilities
     team_odds = []
@@ -318,7 +350,7 @@ def main():
     team_odds.sort(key=lambda t: t["champion"], reverse=True)
 
     bracket = build_predicted_bracket(ko, xg, groups, group_matches, third_slots,
-                                      names, ko_winners)
+                                      names, ko_winners, real_slots)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -345,12 +377,17 @@ def analytic_wdl(xh, xa, maxg=10):
 
 
 def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names,
-                            ko_winners=None):
+                            ko_winners=None, real_slots=None):
     """Single most-likely bracket from ONE consistent set of standings (expected
     points per group), so a team can never appear in two matches of the same
     round. Then advance the favorite (higher expected goals), except where the
-    match has actually been played, in which case the real winner advances."""
+    match has actually been played, in which case the real winner advances.
+    real_slots overrides team identity for any knockout match already
+    resolved by resolve_knockout, since our own third-place assignment can
+    pick a different (but equally valid) permutation than the one actually
+    used (see load_real_slots)."""
     ko_winners = ko_winners or {}
+    real_slots = real_slots or {}
     placements = {}   # '1A', '2B' -> code
     thirds = []       # (code, group_letter, pts, gd)
     standings = {}    # group -> {ranked, st}
@@ -431,8 +468,11 @@ def build_predicted_bracket(ko, xg, groups, group_matches, third_slots, names,
     winners, rounds = {}, defaultdict(list)
     for m in ko:
         num, rnd = m["num"], m["round"]
-        a = resolve(m["ref1"], winners, num, "1")
-        b = resolve(m["ref2"], winners, num, "2")
+        if num in real_slots:
+            a, b = real_slots[num]
+        else:
+            a = resolve(m["ref1"], winners, num, "1")
+            b = resolve(m["ref2"], winners, num, "2")
         if a is None or b is None:
             continue
         actual_w = ko_winners.get(num)

@@ -2,11 +2,15 @@
 Fetch finished World Cup results and write the scores into `fixtures`.
 
 Source: openfootball/worldcup.json (same free, public-domain feed we use for
-the schedule). A played match carries score.ft = [home_goals, away_goals];
-this updates the matching fixture. A knockout match still level at full time
-also carries score.p = [home_pens, away_pens], recorded alongside so the
-tournament sim can tell who actually advanced. Run before update_results.py,
-which then computes the Brier score for each scored prediction.
+the schedule). A played match carries score.ft = [home_goals, away_goals].
+A knockout match still level after 90 minutes goes to extra time
+(score.et = the score after those 30 extra minutes, real goals scored in
+play) and, if still level after that, a penalty shootout
+(score.p = [home_pens, away_pens], a tiebreak procedure, not goals). The
+final recorded score is et when present, otherwise ft; pens are recorded
+alongside, separately, so the tournament sim can tell who actually advanced.
+Run before update_results.py, which then computes the Brier score for each
+scored prediction.
 
 This is the real-time results connector. openfootball is community-maintained
 and updates through the tournament; if you later want lower-latency official
@@ -43,6 +47,10 @@ def main():
             if not ft or len(ft) != 2:
                 continue  # not played yet
 
+            # Extra time goals are real goals scored in play; the final score
+            # is et when the match went there, otherwise ft. A penalty
+            # shootout is a separate tiebreak procedure, recorded apart.
+            final = score.get("et") or ft
             pens = score.get("p")
             home_pens = int(pens[0]) if pens and len(pens) == 2 else None
             away_pens = int(pens[1]) if pens and len(pens) == 2 else None
@@ -59,7 +67,7 @@ def main():
                         result_source = 'openfootball', result_at = now()
                     WHERE match_num = %s AND home_goals IS NULL
                     """,
-                    (int(ft[0]), int(ft[1]), home_pens, away_pens, num),
+                    (int(final[0]), int(final[1]), home_pens, away_pens, num),
                 )
                 updated += cur.rowcount
             else:
@@ -76,7 +84,7 @@ def main():
                         result_source = 'openfootball', result_at = now()
                     WHERE match_id = %s AND home_goals IS NULL
                     """,
-                    (int(ft[0]), int(ft[1]), home_pens, away_pens, slug),
+                    (int(final[0]), int(final[1]), home_pens, away_pens, slug),
                 )
                 updated += cur.rowcount
                 if cur.rowcount == 0:
