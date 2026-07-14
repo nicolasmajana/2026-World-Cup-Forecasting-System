@@ -20,9 +20,14 @@ export function ChampionChart({ data }: { data: ChampionHistory }) {
   const n = data.columns.length;
   if (n === 0 || data.teams.length === 0) return null;
 
-  // Top contenders by the latest day's odds.
+  // Top contenders by their PEAK odds over the whole run, not the latest day.
+  // A team that was once a real favorite and then crashed out (now 0%) stays
+  // on the chart, so you can see its full rise and fall as results came in,
+  // instead of being silently replaced by the next team once it's eliminated.
+  const peak = (t: (typeof data.teams)[number]) =>
+    Math.max(0, ...t.values.map((v) => v ?? 0));
   const teams = [...data.teams]
-    .sort((a, b) => (b.values[n - 1] ?? 0) - (a.values[n - 1] ?? 0))
+    .sort((a, b) => peak(b) - peak(a))
     .slice(0, MAX_LINES);
 
   const plotW = W - PAD.left - PAD.right;
