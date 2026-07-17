@@ -5,8 +5,10 @@ with real team names as the tournament resolves, so anything that needs the
 STRUCTURE (the simulation, the resolver) must not depend on the feed's
 current labels. Slot refs: 1A = winner of Group A, 2B = runner-up,
 3A/B/C/D/F = a qualifying third-place team from one of those groups,
-W74 / L101 = winner / loser of that match number. The Final and the
-third-place match carry no number in the feed; we use 103 and 104.
+W74 / L101 = winner / loser of that match number. The feed numbers the
+Final and third-place match itself (confirmed from the live 2026 feed):
+103 = third-place match, 104 = Final. The round-label fallback below only
+applies if a future feed omits "num" for these two matches.
 """
 
 WIRES = [
@@ -40,12 +42,12 @@ WIRES = [
     {"num": 100, "round": "qf", "ref1": "W95", "ref2": "W96"},
     {"num": 101, "round": "sf", "ref1": "W97", "ref2": "W98"},
     {"num": 102, "round": "sf", "ref1": "W99", "ref2": "W100"},
-    {"num": 104, "round": "3p", "ref1": "L101", "ref2": "L102"},
-    {"num": 103, "round": "f", "ref1": "W101", "ref2": "W102"},
+    {"num": 103, "round": "3p", "ref1": "L101", "ref2": "L102"},
+    {"num": 104, "round": "f", "ref1": "W101", "ref2": "W102"},
 ]
 
-FINAL_NUM = 103
-THIRD_PLACE_NUM = 104
+FINAL_NUM = 104
+THIRD_PLACE_NUM = 103
 
 # Third-place slots: "num:side" -> set of groups that slot may receive
 THIRD_SLOTS = [

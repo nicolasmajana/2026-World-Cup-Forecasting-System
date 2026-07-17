@@ -374,7 +374,7 @@ export async function getTournamentComparison(): Promise<TournamentComparison | 
      FROM fixtures f
      JOIN teams ht ON ht.id = f.home_team_id
      JOIN teams at ON at.id = f.away_team_id
-     WHERE f.match_num = 103 AND f.home_goals IS NOT NULL`,
+     WHERE f.match_num = 104 AND f.home_goals IS NOT NULL`,
   );
 
   const byStage = new Map<string, { name: string; code: string }[]>();

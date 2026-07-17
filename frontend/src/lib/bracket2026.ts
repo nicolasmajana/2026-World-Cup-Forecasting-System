@@ -36,7 +36,9 @@ const WIRES: { num: number; round: string; ref1: string; ref2: string }[] = [
   { num: 100, round: "qf", ref1: "W95", ref2: "W96" },
   { num: 101, round: "sf", ref1: "W97", ref2: "W98" },
   { num: 102, round: "sf", ref1: "W99", ref2: "W100" },
-  { num: 103, round: "f", ref1: "W101", ref2: "W102" },
+  // The live feed numbers the Final and third-place match itself: 103 =
+  // third place (not part of this single-elimination tree), 104 = Final.
+  { num: 104, round: "f", ref1: "W101", ref2: "W102" },
 ];
 
 const parent: Record<number, number> = {};
@@ -52,7 +54,7 @@ for (const w of WIRES)
 function half(num: number): "L" | "R" | "C" {
   if (num === 101) return "L";
   if (num === 102) return "R";
-  if (num >= 103) return "C";
+  if (num >= 104) return "C";
   const p = parent[num];
   return p ? half(p) : "C";
 }
@@ -72,7 +74,7 @@ function assignLeaves(num: number) {
   }
   ch.forEach(assignLeaves);
 }
-assignLeaves(103);
+assignLeaves(104);
 
 export const ORDER: Record<number, number> = {};
 function pos(num: number): number {

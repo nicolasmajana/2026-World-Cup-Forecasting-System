@@ -30,7 +30,7 @@ from data.features import (  # noqa: E402
     latest_strength, DEFAULT_ELO,
 )
 from data.load_fixtures import FIXTURES_URL, stage_for  # noqa: E402
-from data.bracket_wiring import WIRES, THIRD_SLOTS  # noqa: E402
+from data.bracket_wiring import WIRES, THIRD_SLOTS, FINAL_NUM  # noqa: E402
 from model.poisson_model import PoissonGoalModel, FEATURE_COLS  # noqa: E402
 
 N_SIMS = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
@@ -46,7 +46,7 @@ ROUND_OF = {  # match num -> round key (for "reached round" tallies)
     **{n: "r16" for n in range(89, 97)},
     **{n: "qf" for n in range(97, 101)},
     **{n: "sf" for n in range(101, 103)},
-    103: "final",
+    FINAL_NUM: "final",
 }
 
 
@@ -244,7 +244,7 @@ def simulate_once(groups, group_matches, ko, third_slots, xg, rng, tally,
         winners[num] = w
         winners[("L", num)] = loser
 
-    champ = winners.get(103)
+    champ = winners.get(FINAL_NUM)
     if champ:
         tally["champion"][champ] += 1
 
